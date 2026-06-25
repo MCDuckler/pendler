@@ -9,7 +9,7 @@
 // arbitrary URLs (internal services, cloud metadata, traffic laundering).
 const ALLOWED_TIMETABLE_HOSTS = ['hs-pforzheim.de'];
 
-function assertAllowedTimetableUrl(rawUrl) {
+export function assertAllowedTimetableUrl(rawUrl) {
   let host;
   try {
     const u = new URL(rawUrl);
@@ -64,7 +64,7 @@ async function fetchText(url, headers) {
   }
 }
 
-function parseIcal(icsText) {
+export function parseIcal(icsText) {
   const events = [];
   const blocks = icsText.split('BEGIN:VEVENT');
 
