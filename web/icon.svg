@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#3d3a35"/>
+  <g fill="none" stroke="#faf9f5" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Train body -->
+    <rect x="136" y="144" width="240" height="224" rx="32"/>
+    <!-- Windows -->
+    <rect x="172" y="192" width="72" height="56" rx="8" fill="#faf9f5" stroke="none"/>
+    <rect x="268" y="192" width="72" height="56" rx="8" fill="#faf9f5" stroke="none"/>
+    <!-- Door line -->
+    <line x1="256" y1="280" x2="256" y2="368"/>
+    <!-- Wheels -->
+    <circle cx="192" cy="392" r="20" fill="#faf9f5"/>
+    <circle cx="320" cy="392" r="20" fill="#faf9f5"/>
+    <!-- Rail -->
+    <line x1="120" y1="412" x2="392" y2="412"/>
+    <!-- Pantograph -->
+    <polyline points="224,144 256,96 288,144"/>
+  </g>
+</svg>

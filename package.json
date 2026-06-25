@@ -1,0 +1,15 @@
+{
+  "name": "commute-pwa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "build": "cp index.html style.css app.js manifest.json sw.js icon.svg icon-192.png icon-512.png apple-touch-icon.png public/",
+    "preview": "npm run build && npx wrangler pages dev public --live-reload",
+    "deploy": "npm run build && npx wrangler pages deploy public"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.1.0",
+    "wrangler": "^4.81.0"
+  }
+}
