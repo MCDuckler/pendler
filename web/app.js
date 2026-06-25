@@ -23,6 +23,19 @@ let timetableData = null; // { week, days: { dayNum: [events] }, cachedAt }
 let timetableError = null;
 let timetableLoading = false;
 
+// ─── Navigator (ad-hoc routing) state ────────────────
+let activeTab = 'dashboard';   // 'dashboard' | 'navigator'
+let navFrom = null;            // location object
+let navTo = null;
+let navTimeMode = 'departure'; // 'departure' | 'arrival'
+let navWhen = null;            // null = now, else a Date (manual override)
+let navJourneys = null;
+let navError = null;
+let navLoading = false;
+let navLastUpdated = null;
+let navLocating = false;
+let navInitialized = false;
+
 // ─── Config ──────────────────────────────────────────
 function defaultConfig() {
   return {
@@ -132,29 +145,34 @@ function normalizeJourneys(data) {
   }));
 }
 
-async function fetchJourneys(fromLoc, toLoc, timeStr, forDate, mode) {
+// opts lets callers override the commute config (the ad-hoc Navigator passes
+// empty via/exclude so it isn't constrained by the saved commute route).
+async function fetchJourneys(fromLoc, toLoc, timeStr, forDate, mode, opts = {}) {
   const [h, m] = timeStr.split(':').map(Number);
   const timeDate = new Date(forDate.getFullYear(), forDate.getMonth(), forDate.getDate(), h, m);
   const now = new Date();
   const isToday = forDate.toDateString() === now.toDateString();
 
+  const excludedProducts = opts.excludedProducts ?? config.excludedProducts ?? [];
+  const viaStops = opts.viaStops ?? config.viaStops ?? [];
+
   // Resolve time/mode once; both upstreams share the departure/arrival param names.
   const useArrival = mode === 'arrival' && !(isToday && timeDate < now);
   const timeKey = useArrival ? 'arrival' : 'departure';
   const timeVal = (useArrival ? timeDate : (isToday && timeDate < now ? now : timeDate)).toISOString();
-  const results = String(config.results || 4);
+  const results = String(opts.results ?? config.results ?? 4);
 
   // Primary: own backend. from/to = stop id string or JSON-encoded address.
   const encodeLoc = loc => (loc.type === 'location' && !loc.id) ? JSON.stringify(loc) : loc.id;
   const apiParams = new URLSearchParams({
     from: encodeLoc(fromLoc), to: encodeLoc(toLoc), results, [timeKey]: timeVal,
   });
-  if (config.excludedProducts?.length > 0) {
-    apiParams.set('excludeProducts', config.excludedProducts.join(','));
+  if (excludedProducts.length > 0) {
+    apiParams.set('excludeProducts', excludedProducts.join(','));
   }
-  if (config.viaStops?.length > 0) {
+  if (viaStops.length > 0) {
     // Backend resolves each stop via buildHaltId (id string or address object).
-    apiParams.set('via', JSON.stringify(config.viaStops));
+    apiParams.set('via', JSON.stringify(viaStops));
   }
 
   try {
@@ -164,14 +182,12 @@ async function fetchJourneys(fromLoc, toLoc, timeStr, forDate, mode) {
     const fb = new URLSearchParams({ results, [timeKey]: timeVal });
     setLocParam(fb, 'from', fromLoc);
     setLocParam(fb, 'to', toLoc);
-    if (config.excludedProducts?.length > 0) {
-      for (const p of config.excludedProducts) {
-        const hafas = PRODUCT_TO_HAFAS[p];
-        if (hafas) fb.set(hafas, 'false');
-      }
+    for (const p of excludedProducts) {
+      const hafas = PRODUCT_TO_HAFAS[p];
+      if (hafas) fb.set(hafas, 'false');
     }
     // transport.rest only supports a single station-id via stop (best effort).
-    const firstVia = config.viaStops?.find(v => v.id);
+    const firstVia = viaStops.find(v => v.id);
     if (firstVia) fb.set('via', firstVia.id);
     return normalizeJourneys(await fetchJson(`${DB_FALLBACK}/journeys?${fb}`));
   }
@@ -355,7 +371,11 @@ function startAutoRefresh() {
     // Skip while the tab is backgrounded — no point burning API calls/battery
     // on data the user can't see; we refresh again on return to foreground.
     if (document.visibilityState !== 'visible') return;
-    if (selectedDay === new Date().getDay()) refreshJourneys();
+    if (activeTab === 'navigator') {
+      if (!navWhen && navFrom && navTo) refreshNavigator(); // only auto-refresh "now"
+    } else if (selectedDay === new Date().getDay()) {
+      refreshJourneys();
+    }
   }, REFRESH_MS);
 }
 
@@ -1036,6 +1056,17 @@ function onSearchInput(query) {
 
 function selectLocation(locJson) {
   const loc = typeof locJson === 'string' ? JSON.parse(locJson) : locJson;
+
+  // Navigator targets are transient (not saved to the commute config).
+  if (searchTarget === 'nav-from' || searchTarget === 'nav-to') {
+    if (searchTarget === 'nav-to') navTo = loc; else navFrom = loc;
+    navJourneys = null; expandedCard = null;
+    closeSearch();
+    renderNavigator();
+    refreshNavigator();
+    return;
+  }
+
   if (searchTarget === 'home') config.homeLocation = loc;
   else if (searchTarget === 'work') config.workLocation = loc;
   else if (searchTarget === 'via') {
@@ -1148,6 +1179,201 @@ async function reloadTimetable() {
   }
 }
 
+// ─── Tabs ────────────────────────────────────────────
+function switchTab(tab) {
+  if (activeTab === tab) return;
+  activeTab = tab;
+  const onDash = tab === 'dashboard';
+  document.getElementById('tab-dashboard').classList.toggle('active', onDash);
+  document.getElementById('tab-navigator').classList.toggle('active', !onDash);
+  document.getElementById('tab-dashboard').setAttribute('aria-selected', String(onDash));
+  document.getElementById('tab-navigator').setAttribute('aria-selected', String(!onDash));
+  document.getElementById('view-dashboard').classList.toggle('hidden', !onDash);
+  document.getElementById('view-navigator').classList.toggle('hidden', onDash);
+  document.getElementById('app-title').textContent = onDash ? 'Pendler' : 'Navigator';
+  document.getElementById('header-date').style.display = onDash ? '' : 'none';
+
+  expandedCard = null;
+  if (onDash) {
+    renderDashboard();
+  } else {
+    if (!navInitialized) initNavigator();
+    renderNavigator();
+    if (navFrom && navTo && !navJourneys && !navLoading) refreshNavigator();
+  }
+}
+
+// ─── Navigator ───────────────────────────────────────
+function initNavigator() {
+  navInitialized = true;
+  // Start from the saved commute locations, oriented by time of day: before
+  // noon you're typically heading out (home→work); later, heading back.
+  const morning = new Date().getHours() < 12;
+  if (morning) { navFrom = config.homeLocation; navTo = config.workLocation; }
+  else { navFrom = config.workLocation; navTo = config.homeLocation; }
+}
+
+function navWorkLabel() { return config.scheduleMode === 'timetable' ? 'Hochschule' : 'Arbeit'; }
+function navWorkIcon() { return config.scheduleMode === 'timetable' ? '\u{1F393}' : '\u{1F3E2}'; }
+
+function navWhenInputValue() {
+  const d = navWhen || new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function renderNavigator() {
+  const el = document.getElementById('view-navigator');
+  let html = renderNavForm();
+
+  if (!navFrom || !navTo) {
+    html += `<div class="nav-hint">Wähle Start und Ziel, um Verbindungen zu sehen.</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  if (navLastUpdated || navLoading) {
+    html += `<div class="last-updated">
+      <span>${navLoading ? 'Lädt…' : 'Aktualisiert ' + formatTimeAgo(navLastUpdated)}</span>
+      <button class="refresh-btn${navLoading ? ' spinning' : ''}" onclick="refreshNavigator()" aria-label="Aktualisieren">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+      </button>
+    </div>`;
+  }
+
+  html += '<div class="section">';
+  if (navError) {
+    html += `<div class="error-card"><p>${escHtml(navError)}</p><button class="error-retry" onclick="refreshNavigator()">Erneut versuchen</button></div>`;
+  } else if (navJourneys && navJourneys.length > 0) {
+    navJourneys.forEach((j, i) => { html += renderJourneyCard(j, 'nav', i); });
+  } else if (navJourneys && navJourneys.length === 0) {
+    html += `<div class="error-card"><p>Keine Verbindungen gefunden</p><button class="error-retry" onclick="refreshNavigator()">Erneut versuchen</button></div>`;
+  } else if (navLoading) {
+    html += renderLoadingSkeleton(3);
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  if (expandedCard) {
+    const card = el.querySelector(`[data-card-id="${expandedCard}"]`);
+    if (card) { card.classList.add('expanded'); card.setAttribute('aria-expanded', 'true'); }
+  }
+}
+
+function renderNavForm() {
+  const fromName = navFrom ? (navFrom.name || navFrom.address || 'Start') : null;
+  const toName = navTo ? (navTo.name || navTo.address || 'Ziel') : null;
+
+  return `<div class="nav-card">
+    <div class="nav-points">
+      <div class="nav-rail" aria-hidden="true"><span class="nav-rail-dot start"></span><span class="nav-rail-line"></span><span class="nav-rail-dot end"></span></div>
+      <div class="nav-fields">
+        <button class="nav-field" onclick="openSearch('nav-from')">
+          <span class="nav-field-label">Von</span>
+          <span class="nav-field-value${fromName ? '' : ' placeholder'}">${fromName ? escHtml(fromName) : 'Startpunkt wählen'}</span>
+        </button>
+        <div class="nav-divider"></div>
+        <button class="nav-field" onclick="openSearch('nav-to')">
+          <span class="nav-field-label">Nach</span>
+          <span class="nav-field-value${toName ? '' : ' placeholder'}">${toName ? escHtml(toName) : 'Ziel wählen'}</span>
+        </button>
+      </div>
+      <button class="nav-swap" onclick="swapNav()" aria-label="Start und Ziel tauschen"${navFrom && navTo ? '' : ' disabled'}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5v14M7 5L4 8M7 5l3 3M17 19V5M17 19l3-3M17 19l-3-3"/></svg>
+      </button>
+    </div>
+
+    <div class="nav-quick">
+      <button class="nav-chip" onclick="navUseLocation('from')"${navLocating ? ' disabled' : ''}>
+        <span class="nav-chip-ico">\u{1F4CD}</span>${navLocating ? 'Ortung…' : 'Standort'}
+      </button>
+      ${config.homeLocation ? `<button class="nav-chip" onclick="navQuick('to','home')"><span class="nav-chip-ico">\u{1F3E0}</span>Zuhause</button>` : ''}
+      ${config.workLocation ? `<button class="nav-chip" onclick="navQuick('to','work')"><span class="nav-chip-ico">${navWorkIcon()}</span>${escHtml(navWorkLabel())}</button>` : ''}
+    </div>
+
+    <div class="nav-time">
+      <div class="mode-toggle nav-time-modes">
+        <button class="mode-btn${navTimeMode === 'departure' ? ' active' : ''}" onclick="setNavMode('departure')">Abfahrt</button>
+        <button class="mode-btn${navTimeMode === 'arrival' ? ' active' : ''}" onclick="setNavMode('arrival')">Ankunft</button>
+      </div>
+      <input type="datetime-local" class="nav-when-input" value="${navWhenInputValue()}" onchange="setNavWhen(this.value)" aria-label="Zeitpunkt">
+      <button class="nav-now-btn${navWhen ? '' : ' active'}" onclick="setNavNow()">Jetzt</button>
+    </div>
+  </div>`;
+}
+
+function swapNav() {
+  if (!navFrom || !navTo) return;
+  [navFrom, navTo] = [navTo, navFrom];
+  navJourneys = null; expandedCard = null;
+  renderNavigator();
+  refreshNavigator();
+}
+
+function navQuick(target, which) {
+  const loc = which === 'home' ? config.homeLocation : config.workLocation;
+  if (!loc) return;
+  if (target === 'to') navTo = loc; else navFrom = loc;
+  navJourneys = null; expandedCard = null;
+  renderNavigator();
+  refreshNavigator();
+}
+
+function navUseLocation(target) {
+  if (!navigator.geolocation) { navError = 'Standortdienste nicht verfügbar.'; renderNavigator(); return; }
+  navLocating = true; navError = null; renderNavigator();
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const loc = { type: 'location', name: 'Mein Standort', latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      if (target === 'to') navTo = loc; else navFrom = loc;
+      navLocating = false; navJourneys = null; expandedCard = null;
+      renderNavigator();
+      refreshNavigator();
+    },
+    () => { navLocating = false; navError = 'Standort konnte nicht ermittelt werden.'; renderNavigator(); },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+function setNavMode(mode) {
+  navTimeMode = mode;
+  renderNavigator();
+  refreshNavigator();
+}
+
+function setNavWhen(val) {
+  if (!val) return;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return;
+  navWhen = d;
+  refreshNavigator();
+}
+
+function setNavNow() {
+  navWhen = null;
+  renderNavigator();
+  refreshNavigator();
+}
+
+async function refreshNavigator() {
+  if (!navFrom || !navTo) { renderNavigator(); return; }
+  navLoading = true; navError = null; expandedCard = null;
+  renderNavigator();
+
+  const when = navWhen || new Date();
+  const p = n => String(n).padStart(2, '0');
+  const timeStr = `${p(when.getHours())}:${p(when.getMinutes())}`;
+  try {
+    navJourneys = await fetchJourneys(navFrom, navTo, timeStr, when, navTimeMode, { viaStops: [], excludedProducts: [] });
+  } catch (e) {
+    navJourneys = null;
+    navError = e?.message || 'Verbindungen konnten nicht geladen werden';
+  }
+  navLoading = false; navLastUpdated = new Date();
+  renderNavigator();
+}
+
 // ─── Utilities ───────────────────────────────────────
 function fmtTime(iso) {
   if (!iso) return '--:--';
@@ -1218,9 +1444,10 @@ function init() {
 
   // Refresh immediately when the user returns to the tab/PWA, if showing today.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible'
-        && selectedDay === new Date().getDay()
-        && config.homeLocation && config.workLocation) {
+    if (document.visibilityState !== 'visible') return;
+    if (activeTab === 'navigator') {
+      if (!navWhen && navFrom && navTo) refreshNavigator();
+    } else if (selectedDay === new Date().getDay() && config.homeLocation && config.workLocation) {
       refreshJourneys();
     }
   });

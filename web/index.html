@@ -16,7 +16,7 @@
   <div id="app">
     <header class="app-header">
       <div class="header-content">
-        <h1>Pendler</h1>
+        <h1 id="app-title">Pendler</h1>
         <div class="header-right">
           <span id="header-date" class="header-date"></span>
           <button class="header-gear" onclick="openSettings()" aria-label="Einstellungen">
@@ -30,7 +30,23 @@
 
     <main class="app-content">
       <div id="view-dashboard"></div>
+      <div id="view-navigator" class="hidden"></div>
     </main>
+
+    <nav class="tab-bar" role="tablist" aria-label="Ansicht wechseln">
+      <button class="tab-item active" id="tab-dashboard" role="tab" aria-selected="true" onclick="switchTab('dashboard')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="3" width="16" height="14" rx="3"/><path d="M4 11h16"/><circle cx="8.5" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.1" fill="currentColor" stroke="none"/><path d="M8 21l1.5-2M16 21l-1.5-2"/>
+        </svg>
+        <span>Pendler</span>
+      </button>
+      <button class="tab-item" id="tab-navigator" role="tab" aria-selected="false" onclick="switchTab('navigator')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>Navigator</span>
+      </button>
+    </nav>
   </div>
 
   <div id="settings-overlay" class="settings-overlay hidden">
