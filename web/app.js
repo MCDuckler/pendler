@@ -1464,6 +1464,17 @@ function init() {
     }
   }
 
+  // Enable real glass refraction only on Chromium, which actually renders an
+  // SVG displacement filter inside backdrop-filter. Safari/Firefox parse the
+  // url() but don't render it, so they keep the frosted-glass base instead.
+  try {
+    const supportsUrlBackdrop = CSS.supports('backdrop-filter', 'url(#g)')
+      || CSS.supports('-webkit-backdrop-filter', 'url(#g)');
+    if (window.chrome && supportsUrlBackdrop) {
+      document.documentElement.classList.add('glass-lens');
+    }
+  } catch { /* CSS.supports unavailable — stay on frosted base */ }
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
