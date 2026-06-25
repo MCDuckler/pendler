@@ -37,6 +37,12 @@ test('buildHaltId: object with id', () => {
   assert.equal(buildHaltId({ id: '561215' }), 'A=1@L=561215@');
 });
 
+test('buildHaltId: address without coordinates falls back to id (no NaN)', () => {
+  const out = buildHaltId({ type: 'location', address: 'Irgendwo', id: '8000299' });
+  assert.equal(out, 'A=1@L=8000299@');
+  assert.ok(!out.includes('NaN'));
+});
+
 // ─── parseLocation ──────────────────────────────────────────────────
 test('parseLocation: JSON object string', () => {
   assert.deepEqual(parseLocation('{"id":"5","name":"X"}'), { id: '5', name: 'X' });

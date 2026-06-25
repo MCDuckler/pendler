@@ -6,7 +6,6 @@ const DAY_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
 // ─── State ───────────────────────────────────────────
 let config = null;
-let settingsOpen = false;
 let selectedDay = new Date().getDay();
 let searchTarget = null; // 'home' | 'work'
 let searchAbort = null;
@@ -304,8 +303,7 @@ async function refreshJourneys() {
     if (!timetableData && config.timetableUrl) await fetchTimetable();
     const times = getTimetableTimes(selectedDay);
     if (!times) {
-      outboundJourneys = null;
-      returnJourneys = null;
+      resetJourneys();
       renderDashboard();
       return;
     }
@@ -336,8 +334,7 @@ async function refreshJourneys() {
   // Manual mode
   const dayConf = config.days[selectedDay];
   if (!dayConf || !dayConf.enabled) {
-    outboundJourneys = null;
-    returnJourneys = null;
+    resetJourneys();
     renderDashboard();
     return;
   }
@@ -409,9 +406,7 @@ function getWeekMonday() {
 async function changeWeek(delta) {
   weekOffset += delta;
   expandedCard = null;
-  outboundJourneys = null;
-  returnJourneys = null;
-  lastUpdated = null;
+  resetJourneys();
   timetableData = null;
   // Try loading from per-week cache first
   loadCachedTimetable();
@@ -766,7 +761,7 @@ function renderSchedule() {
     <div class="schedule-section">
       <div class="schedule-section-title">Standorte</div>
       <div class="station-card">
-        <div class="station-row" onclick="openSearch('home')">
+        <div class="station-row" role="button" tabindex="0" onclick="openSearch('home')" onkeydown="onKeyActivate(event)">
           <div class="station-icon home">\u{1F3E0}</div>
           <div>
             <div class="station-label">Zuhause</div>
@@ -774,7 +769,7 @@ function renderSchedule() {
           </div>
           <div class="station-chevron">\u203A</div>
         </div>
-        <div class="station-row" onclick="openSearch('work')">
+        <div class="station-row" role="button" tabindex="0" onclick="openSearch('work')" onkeydown="onKeyActivate(event)">
           <div class="station-icon work">${isTimetable ? '\u{1F393}' : '\u{1F3E2}'}</div>
           <div>
             <div class="station-label">${isTimetable ? 'Hochschule' : 'Arbeit'}</div>
@@ -789,7 +784,7 @@ function renderSchedule() {
       <div class="schedule-section-title">Route</div>
       <div class="station-card">
         ${renderViaStops()}
-        <div class="station-row via-add" onclick="openSearch('via')">
+        <div class="station-row via-add" role="button" tabindex="0" onclick="openSearch('via')" onkeydown="onKeyActivate(event)">
           <div class="station-icon via">+</div>
           <div>
             <div class="station-name placeholder">Zwischenhalt hinzuf\u00fcgen</div>
@@ -895,11 +890,16 @@ function toggleProduct(product) {
   invalidateJourneys();
 }
 
+// Clear the dashboard's loaded commute journeys (e.g. after a config change).
+function resetJourneys() {
+  outboundJourneys = null;
+  returnJourneys = null;
+  lastUpdated = null;
+}
+
 function invalidateJourneys() {
   if (config.homeLocation && config.workLocation) {
-    outboundJourneys = null;
-    returnJourneys = null;
-    lastUpdated = null;
+    resetJourneys();
     refreshJourneys();
   }
 }
@@ -1038,7 +1038,7 @@ function onSearchInput(query) {
         };
         const products = !isAddress && loc.products ? Object.entries(loc.products).filter(([,v]) => v).map(([k]) => k) : [];
 
-        return `<div class="search-result" onclick="selectLocation(${escAttr(JSON.stringify(stored))})">
+        return `<div class="search-result" role="button" tabindex="0" onclick="selectLocation(${escAttr(JSON.stringify(stored))})" onkeydown="onKeyActivate(event)">
           <div class="search-result-icon">${icon}</div>
           <div>
             <div class="search-result-name">${escHtml(loc.name || loc.address || '')}</div>
@@ -1076,12 +1076,7 @@ function selectLocation(locJson) {
   saveConfig();
   closeSearch();
   renderSchedule();
-  if (config.homeLocation && config.workLocation) {
-    outboundJourneys = null;
-    returnJourneys = null;
-    lastUpdated = null;
-    refreshJourneys();
-  }
+  invalidateJourneys();
 }
 
 // ─── Settings sheet ─────────────────────────────────
@@ -1097,9 +1092,7 @@ function closeSettings() {
 function selectDay(day) {
   selectedDay = day;
   expandedCard = null;
-  outboundJourneys = null;
-  returnJourneys = null;
-  lastUpdated = null;
+  resetJourneys();
   renderDashboard();
   refreshJourneys();
 }
@@ -1118,6 +1111,11 @@ function onCardKey(e, cardId) {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCard(cardId); }
 }
 
+// Generic keyboard activation for div[role=button] rows — fires their onclick.
+function onKeyActivate(e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }
+}
+
 function toggleDay(day, enabled) {
   config.days[day].enabled = enabled;
   saveConfig();
@@ -1134,20 +1132,13 @@ function setMode(direction, mode) {
   else config.returnMode = mode;
   saveConfig();
   renderSchedule();
-  if (config.homeLocation && config.workLocation) {
-    outboundJourneys = null;
-    returnJourneys = null;
-    lastUpdated = null;
-    refreshJourneys();
-  }
+  invalidateJourneys();
 }
 
 function setScheduleMode(mode) {
   config.scheduleMode = mode;
   saveConfig();
-  outboundJourneys = null;
-  returnJourneys = null;
-  lastUpdated = null;
+  resetJourneys();
   renderSchedule();
   if (mode === 'timetable' && config.timetableUrl && !timetableData) {
     reloadTimetable();
@@ -1171,12 +1162,7 @@ async function reloadTimetable() {
   renderSchedule();
   await fetchTimetable();
   renderSchedule();
-  if (config.homeLocation && config.workLocation) {
-    outboundJourneys = null;
-    returnJourneys = null;
-    lastUpdated = null;
-    refreshJourneys();
-  }
+  invalidateJourneys();
 }
 
 // ─── Tabs ────────────────────────────────────────────

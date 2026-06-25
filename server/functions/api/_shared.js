@@ -50,7 +50,8 @@ export function buildHaltId(loc) {
   if (typeof loc === 'string') {
     return `A=1@L=${loc}@`;
   }
-  if (loc.type === 'location' || loc.address) {
+  // Coordinate halt — only valid with real lat/lon, else we'd emit X=NaN.
+  if ((loc.type === 'location' || loc.address) && loc.longitude != null && loc.latitude != null) {
     const x = Math.round(loc.longitude * 1e6);
     const y = Math.round(loc.latitude * 1e6);
     const name = loc.address || loc.name || '';
