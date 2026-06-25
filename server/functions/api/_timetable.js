@@ -24,15 +24,23 @@ export function assertAllowedTimetableUrl(rawUrl) {
 
 // Fetch the HIC timetable page, follow it to the iCal export, and parse all
 // events (including their RRULE/EXDATE/UNTIL recurrence metadata).
+const TIMETABLE_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36';
+
 export async function fetchTimetableEvents(timetableUrl) {
   assertAllowedTimetableUrl(timetableUrl);
-  // Use HTTP — the HIC server's HTTPS port is unreliable.
-  const httpUrl = timetableUrl.replace(/^https:/, 'http:');
 
-  // Step 1: Fetch timetable HTML page to extract iCal link
-  const html = await fetchText(httpUrl, {
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-  });
+  // HIC forces https — its http port 301-redirects there for every client, so
+  // http never serves content anymore; https is the only path. Bounded timeout
+  // + clear error so the client falls back to its cached timetable quickly
+  // instead of hanging when HIC is down/unreachable.
+  const baseUrl = timetableUrl.replace(/^http:/, 'https:');
+
+  let html;
+  try {
+    html = await fetchText(baseUrl, { 'User-Agent': TIMETABLE_UA });
+  } catch {
+    throw new Error('Stundenplan-Server nicht erreichbar (evtl. Wartung/Ausfall)');
+  }
 
   // Extract iCal export link (contains termine= with event IDs)
   const icalMatch = html.match(/href="([^"]*moduleCall=iCalendarPlan[^"]*)"/);
@@ -40,24 +48,24 @@ export async function fetchTimetableEvents(timetableUrl) {
 
   let icalUrl = icalMatch[1].replace(/&amp;/g, '&');
   if (icalUrl.startsWith('/')) {
-    const base = new URL(httpUrl);
+    const base = new URL(baseUrl);
     icalUrl = `${base.protocol}//${base.host}${icalUrl}`;
   }
-  icalUrl = icalUrl.replace(/^https:/, 'http:');
   assertAllowedTimetableUrl(icalUrl); // the link came from fetched HTML — re-check host
 
-  // Step 2: Fetch iCal data
+  // Step 2: Fetch iCal data (on the scheme that worked for the page)
   const icsText = await fetchText(icalUrl, { 'User-Agent': 'Mozilla/5.0' });
 
   // Step 3: Parse iCal
   return parseIcal(icsText);
 }
 
-async function fetchText(url, headers) {
+async function fetchText(url, headers, timeoutMs = 15000) {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 60000);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal, headers, redirect: 'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally {
     clearTimeout(t);
