@@ -5,10 +5,9 @@
 # here only so the app-group entitlement travels with the binaries — SideStore reads
 # it from there to register the group the widget shares with the app.
 #
-# The repo is private, so the release is not something a phone can download. The
-# WetOwl box polls releases (gh on the box), re-hosts the ipa under
-# https://89-58-49-140.nip.io/mail/app/ and serves the SideStore source from there;
-# latest.json below already points at that address.
+# The WetOwl box polls this repo's releases, re-hosts the ipa under
+# https://89-58-49-140.nip.io/mail/app/ and serves the SideStore source from there
+# (the server lives in a private repo); latest.json below already points at it.
 name: iPhone app
 
 on:
