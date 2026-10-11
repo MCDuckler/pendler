@@ -5,7 +5,7 @@ import UIKit
 ///
 /// iOS cannot install anything itself and the app is signed on the phone by SideStore,
 /// so this notices a newer build and hands the ipa link to SideStore (AltStore, then
-/// Safari as fallbacks). The repo is private: CI attaches the ipa to a release and the
+/// Safari as fallbacks). CI attaches the ipa to a release and the Pendler server on the
 /// box re-hosts it under `<server>/app/`.
 struct Release: Decodable, Equatable {
     let version: String
@@ -25,7 +25,7 @@ struct Release: Decodable, Equatable {
 }
 
 enum Updates {
-    static var base: String { SharedStore.baseURL ?? SharedStore.defaultBaseURL }
+    static var base: String { SharedStore.pendlerURL ?? SharedStore.defaultPendlerURL }
     static var sourceURL: String { "\(base)/app/source.json" }
     static var manifestURL: String { "\(base)/app/latest.json" }
 

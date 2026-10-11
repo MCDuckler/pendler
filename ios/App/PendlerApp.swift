@@ -1,8 +1,9 @@
 import SwiftUI
 
 @main
-struct MailCoachApp: App {
+struct PendlerApp: App {
     @StateObject private var model = AppModel.shared
+    @StateObject private var commute = CommuteModel.shared
     @Environment(\.scenePhase) private var phase
 
     init() {
@@ -13,12 +14,14 @@ struct MailCoachApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(model)
+                .environmentObject(commute)
                 .onOpenURL { model.handle($0) }
-                .task { await model.requestBadgePermission() }
+                .task { await commute.requestNotificationPermission() }
         }
         .onChange(of: phase) { _, new in
             switch new {
             case .active:
+                Task { await commute.refresh() }
                 Task { await model.load() }
                 Task { await model.checkForUpdate() }
             case .background:

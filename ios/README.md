@@ -1,34 +1,33 @@
-# Mail Coach for iPhone
+# Pendler for iPhone
 
-SwiftUI app + WidgetKit extension for the Mail Coach server (see `../API.md`).
-iOS 17, no packages. `xcodegen` generates `MailCoach.xcodeproj` from `project.yml`.
+SwiftUI app + one WidgetKit extension. iOS 17, no packages. `xcodegen` generates
+`Pendler.xcodeproj` from `project.yml`. Mail Coach (the uni-mail to-do list) lives inside as the Mail tab.
 
-- **App** (`App/`, `UI/`): Today (digest + deadlines/reply/to-do), Waiting, FYI, Done,
-  Settings. Swipe right = done, left = snooze/ignore. Thread view with all messages.
-- **Widgets** (`Widgets/`): home screen small/medium/large, lock screen circular/
-  rectangular/inline. Each fetches `/api/widget` itself, falls back to the cached payload.
-- **Shared** (`Shared/`, both targets): models, API client, `SharedStore`.
+- **App** (`App/`, `UI/`): Heute (countdown to leaving, lectures, connections, mail strip),
+  Woche (timetable per weekday → plan any day), Navigator (A → B), Mail (Mail Coach's
+  Today/Waiting/FYI/Done + thread view), Einstellungen. Local "los in N min" reminders.
+- **Widgets** (`Widgets/`): *Pendler* (small/medium/large + lock screen circular/rectangular/inline)
+  and *Uni-Mail* (Mail Coach's widget, unchanged). Each asks its server itself and falls back
+  to what the app cached in the app group.
+- **Shared** (`Shared/`, both targets): models, API clients (`Commute/PendlerAPI.swift`,
+  `API.swift` for Mail Coach), `SharedStore`.
 
-## Pairing
-Open `mailcoach://pair?url=<server>&token=<token>` on the phone (the server prints it).
+## Servers
+- Pendler: `https://pendler.89-58-49-140.nip.io` — public endpoints, no token. A device token
+  (`pendler pair` on the box → `pendler://pair?url=…&token=…`) only adds server pushes.
+- Mail Coach: `https://pendler.89-58-49-140.nip.io/mail` — pair with the `mailcoach://pair` link
+  the Mail Coach server prints (`python3 -m mailcoach pair`). Contract: `API.md`.
 
 ## App group under SideStore
-With a free Apple ID SideStore renames `group.dance.duckduck.mailcoach` (team ID
-appended). `SharedStore` finds the real name at runtime: configured id → `ALTAppGroups`
-in Info.plist (own + containing app) → `embedded.mobileprovision` entitlements. Settings ›
-Status shows which group was resolved ("not shared" = widget cannot see the token).
+With a free Apple ID SideStore renames `group.dance.duckduck.pendler` (team ID appended).
+`SharedStore` finds the real name at runtime: configured id → `ALTAppGroups` in Info.plist
+(own + containing app) → `embedded.mobileprovision`. Einstellungen › Status shows which group
+was resolved ("nicht geteilt" = the widgets cannot see the settings).
 
 ## Build
-Nobody compiles Swift on Linux here: CI (`.github/workflows/ios.yml`) is the compiler.
-Push to `main` touching `ios/**`, a `v*` tag, or run it by hand. It builds unsigned, ad-hoc
-signs with the entitlements, and makes a Release with `MailCoach.ipa` + `latest.json`.
-On failure, read the `build-log` artifact. The box re-hosts the ipa at
-`https://89-58-49-140.nip.io/mail/app/` (repo is private); SideStore source:
-`https://89-58-49-140.nip.io/mail/app/source.json`.
+Nothing compiles Swift on Linux here: CI (`.github/workflows/ios.yml`) is the compiler. Push to
+`main` touching `ios/**`, a `v*` tag, or run it by hand. It builds unsigned, ad-hoc signs with the
+entitlements, and makes a Release with `Pendler.ipa` + `latest.json`. On failure, read the
+`build-log` artifact. SideStore source: `https://pendler.89-58-49-140.nip.io/app/source.json`.
 
-Needs 2 SideStore slots (app + widget extension). If only one is free, install with
-"remove extensions" — the app works, just without widgets.
-
-The server side (IMAP sync, Claude triage, digests, API) is a separate private project;
-`API.md` is the contract. Builds are hosted by that server at
-`https://89-58-49-140.nip.io/mail/app/source.json` (add it in SideStore → Sources).
+Needs 2 SideStore App IDs (app + widget extension).

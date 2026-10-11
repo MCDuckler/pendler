@@ -1,5 +1,5 @@
-# XcodeGen spec — `xcodegen` regenerates MailCoach.xcodeproj from this.
-name: MailCoach
+# XcodeGen spec — `xcodegen` regenerates Pendler.xcodeproj from this.
+name: Pendler
 options:
   bundleIdPrefix: dance.duckduck
   deploymentTarget:
@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
     # Built unsigned on CI (then ad-hoc signed with the entitlements, so SideStore
     # sees the app group); SideStore signs for real on the phone.
@@ -20,7 +20,7 @@ settings:
     DEVELOPMENT_TEAM: ""
     ENABLE_USER_SCRIPT_SANDBOXING: "NO"
 targets:
-  MailCoach:
+  Pendler:
     type: application
     platform: iOS
     sources:
@@ -29,34 +29,36 @@ targets:
       - path: Shared
       - path: Resources/Assets.xcassets
     dependencies:
-      - target: MailCoachWidgets
+      - target: PendlerWidgets
     info:
       path: Resources/Info.plist
       properties:
-        CFBundleDisplayName: Mail Coach
-        CFBundleName: MailCoach
+        CFBundleDisplayName: Pendler
+        CFBundleName: Pendler
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         CFBundleURLTypes:
-          - CFBundleURLName: dance.duckduck.mailcoach
-            CFBundleURLSchemes: [mailcoach]
+          - CFBundleURLName: dance.duckduck.pendler
+            CFBundleURLSchemes: [pendler, mailcoach]
         LSApplicationQueriesSchemes: [sidestore, altstore]
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UIBackgroundModes: [fetch]
-        BGTaskSchedulerPermittedIdentifiers: [dance.duckduck.mailcoach.refresh]
+        BGTaskSchedulerPermittedIdentifiers: [dance.duckduck.pendler.refresh]
+        NSLocationWhenInUseUsageDescription: Für „Von hier“ im Navigator.
+        UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dance.duckduck.mailcoach
-        CODE_SIGN_ENTITLEMENTS: Resources/MailCoach.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: dance.duckduck.pendler
+        CODE_SIGN_ENTITLEMENTS: Resources/Pendler.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
-  MailCoachWidgets:
+  PendlerWidgets:
     type: app-extension
     platform: iOS
     sources:
@@ -65,26 +67,26 @@ targets:
     info:
       path: Resources/Widgets-Info.plist
       properties:
-        CFBundleDisplayName: Mail Coach
-        CFBundleName: MailCoachWidgets
+        CFBundleDisplayName: Pendler
+        CFBundleName: PendlerWidgets
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dance.duckduck.mailcoach.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: dance.duckduck.pendler.widgets
         CODE_SIGN_ENTITLEMENTS: Resources/Widgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: "YES"
         SKIP_INSTALL: "YES"
 
 schemes:
-  MailCoach:
+  Pendler:
     build:
       targets:
-        MailCoach: all
-        MailCoachWidgets: all
+        Pendler: all
+        PendlerWidgets: all
     run:
       config: Debug
     archive:

@@ -1190,6 +1190,8 @@ let obPickerQuery = '';
 // Every LSF entry was verified end-to-end (catalog → wplan → iCalendarPlan →
 // real events); instances without that export (e.g. Münster, Weimar) are
 // deliberately absent — they fall back to 'Andere Hochschule'.
+// Mirrored in unis/index.json (+ unis/pforzheim.json), which the iPhone app reads:
+// change both together.
 const UNIVERSITIES = [
   { id: 'pforzheim', name: 'Hochschule Pforzheim', system: 'lsf', host: 'hic.hs-pforzheim.de', path: '/lsf' },
   { id: 'uni-frankfurt', name: 'Goethe-Universität Frankfurt', system: 'lsf', host: 'qis.server.uni-frankfurt.de', path: '/qisserver', catalog: 'unis/uni-frankfurt.json' },

@@ -1,13 +1,12 @@
-# Build Mail Coach for iPhone, unsigned, and publish it as a GitHub Release.
+# Build Pendler for iPhone (with Mail Coach inside), unsigned, and publish it as a GitHub Release.
 #
 # SideStore signs the app on the phone with your own Apple ID, so no certificates,
 # profiles or Apple credentials ever touch this workflow. The build is ad-hoc signed
 # here only so the app-group entitlement travels with the binaries — SideStore reads
 # it from there to register the group the widget shares with the app.
 #
-# The WetOwl box polls this repo's releases, re-hosts the ipa under
-# https://89-58-49-140.nip.io/mail/app/ and serves the SideStore source from there
-# (the server lives in a private repo); latest.json below already points at it.
+# The Pendler server on the WetOwl box mirrors the newest `ios-*` release to
+# https://pendler.89-58-49-140.nip.io/app/ and serves the SideStore source from there.
 name: iPhone app
 
 on:
@@ -15,14 +14,18 @@ on:
   push:
     tags: ["v*"]
     branches: [main]
-    paths-ignore: ["**.md"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 defaults:
   run:
-    working-directory: .
+    working-directory: ios
 
 jobs:
   ipa:
@@ -56,7 +59,7 @@ jobs:
       - name: Build, unsigned
         run: |
           set -o pipefail
-          xcodebuild -project MailCoach.xcodeproj -scheme MailCoach \
+          xcodebuild -project Pendler.xcodeproj -scheme Pendler \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             MARKETING_VERSION="${{ steps.v.outputs.version }}" \
@@ -69,38 +72,38 @@ jobs:
         if: failure()
         with:
           name: build-log
-          path: build.log
+          path: ios/build.log
 
       - name: Ad-hoc sign with entitlements
         run: |
-          app=build/Build/Products/Release-iphoneos/MailCoach.app
+          app=build/Build/Products/Release-iphoneos/Pendler.app
           ls "$app/PlugIns" || { echo "::error::widget extension not embedded"; exit 1; }
           # Inner bundle first, then the app around it.
-          codesign --force --sign - --entitlements Resources/Widgets.entitlements "$app/PlugIns/MailCoachWidgets.appex"
-          codesign --force --sign - --entitlements Resources/MailCoach.entitlements "$app"
-          codesign -d --entitlements - "$app/PlugIns/MailCoachWidgets.appex" 2>/dev/null | grep -q application-groups
+          codesign --force --sign - --entitlements Resources/Widgets.entitlements "$app/PlugIns/PendlerWidgets.appex"
+          codesign --force --sign - --entitlements Resources/Pendler.entitlements "$app"
+          codesign -d --entitlements - "$app/PlugIns/PendlerWidgets.appex" 2>/dev/null | grep -q application-groups
           codesign -d --entitlements - "$app" 2>/dev/null | grep -q application-groups
 
       - name: Wrap as ipa
         run: |
           # An ipa is a zip with the .app inside a folder called Payload.
           mkdir -p out/Payload
-          cp -R build/Build/Products/Release-iphoneos/MailCoach.app out/Payload/
-          cd out && zip -qry MailCoach.ipa Payload && ls -lh MailCoach.ipa
-          shasum -a 256 MailCoach.ipa | cut -d' ' -f1 > sha256.txt
-          stat -f%z MailCoach.ipa > size.txt
+          cp -R build/Build/Products/Release-iphoneos/Pendler.app out/Payload/
+          cd out && zip -qry Pendler.ipa Payload && ls -lh Pendler.ipa
+          shasum -a 256 Pendler.ipa | cut -d' ' -f1 > sha256.txt
+          stat -f%z Pendler.ipa > size.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MailCoach-ipa
-          path: out/MailCoach.ipa
+          name: Pendler-ipa
+          path: ios/out/Pendler.ipa
           retention-days: 30
 
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # What the app's update check reads (the box copies it to /mail/app/latest.json).
+          # What the app's update check reads (the box copies it to /app/latest.json).
           python3 - <<'PY'
           import json, subprocess, datetime
           notes = subprocess.run(["git", "log", "-1", "--format=%s"], capture_output=True, text=True).stdout.strip()
@@ -108,10 +111,10 @@ jobs:
                      "bytes": int(open("out/size.txt").read().strip()),
                      "sha256": open("out/sha256.txt").read().strip(),
                      "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                     "url": "https://89-58-49-140.nip.io/mail/app/MailCoach.ipa", "notes": notes},
+                     "url": "https://pendler.89-58-49-140.nip.io/app/Pendler.ipa", "notes": notes},
                     open("out/latest.json", "w"), indent=2)
           PY
           cat out/latest.json
-          gh release create "${{ steps.v.outputs.tag }}" out/MailCoach.ipa out/latest.json source/icon.png \
-            --title "Mail Coach ${{ steps.v.outputs.version }} (${{ steps.v.outputs.build }})" \
-            --notes "Unsigned build of ${GITHUB_SHA::7}. Install through SideStore from https://89-58-49-140.nip.io/mail/app/source.json"
+          gh release create "${{ steps.v.outputs.tag }}" out/Pendler.ipa out/latest.json source/icon.png \
+            --title "Pendler ${{ steps.v.outputs.version }} (${{ steps.v.outputs.build }})" \
+            --notes "Unsigned build of ${GITHUB_SHA::7}. Install through SideStore from https://pendler.89-58-49-140.nip.io/app/source.json"

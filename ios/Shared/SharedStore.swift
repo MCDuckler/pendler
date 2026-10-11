@@ -1,9 +1,10 @@
 import Foundation
 
-/// Settings and the last widget payload, in the app group both targets share.
+/// Settings and the last widget payloads (mail here, commute in CommuteStore.swift),
+/// in the app group both targets share.
 ///
 /// The group has to be found at runtime: SideStore (and AltStore) re-sign with a free
-/// Apple ID by renaming `group.dance.duckduck.mailcoach` to something with the team ID
+/// Apple ID by renaming `group.dance.duckduck.pendler` to something with the team ID
 /// appended, and the code only knows the original name. So try, in order:
 ///   1. the configured id,
 ///   2. the ids SideStore records under `ALTAppGroups` in Info.plist (this bundle, and —
@@ -11,8 +12,9 @@ import Foundation
 ///   3. the application-groups entitlement in embedded.mobileprovision (same two bundles),
 /// and use the first one iOS actually hands a container for.
 enum SharedStore {
-    static let configuredGroup = "group.dance.duckduck.mailcoach"
-    static let defaultBaseURL = "https://89-58-49-140.nip.io/mail"
+    static let configuredGroup = "group.dance.duckduck.pendler"
+    /// Mail Coach, reverse-proxied under the Pendler host.
+    static let defaultBaseURL = "https://pendler.89-58-49-140.nip.io/mail"
 
     static let resolvedGroup: String? = resolveGroup()
 
@@ -70,7 +72,7 @@ enum SharedStore {
         var seen = Set<String>()
         let ordered = candidates.filter { seen.insert($0).inserted }
         // Prefer ours when a profile lists several groups.
-        let preferred = ordered.filter { $0.contains("mailcoach") } + ordered.filter { !$0.contains("mailcoach") }
+        let preferred = ordered.filter { $0.contains("pendler") } + ordered.filter { !$0.contains("pendler") }
         for g in preferred where FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: g) != nil {
             return g
         }
@@ -78,7 +80,7 @@ enum SharedStore {
     }
 
     /// This bundle, plus the containing app when running as an extension
-    /// (`MailCoach.app/PlugIns/MailCoachWidgets.appex` → `MailCoach.app`).
+    /// (`Pendler.app/PlugIns/PendlerWidgets.appex` → `Pendler.app`).
     private static func bundleURLs() -> [URL] {
         let own = Bundle.main.bundleURL
         var urls = [own]

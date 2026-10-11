@@ -7,7 +7,7 @@ enum APIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notPaired: return "Not paired with a Mail Coach server"
+        case .notPaired: return "Uni-Mail ist nicht gekoppelt"
         case .badURL: return "The server URL is not valid"
         case .status(let c, let m):
             if c == 401 { return "The token was rejected (HTTP 401)" }

@@ -1,21 +1,14 @@
 import WidgetKit
 import SwiftUI
 
-@main
-struct MailCoachWidgetBundle: WidgetBundle {
-    var body: some Widget {
-        MailCoachWidget()
-    }
-}
-
 struct MailCoachWidget: Widget {
     let kind = "MailCoach"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            WidgetView(entry: entry)
+        StaticConfiguration(kind: kind, provider: MailProvider()) { entry in
+            MailWidgetView(entry: entry)
         }
-        .configurationDisplayName("Mail Coach")
+        .configurationDisplayName("Uni-Mail")
         .description("What still needs an answer or action.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
                             .accessoryCircular, .accessoryRectangular, .accessoryInline])
@@ -24,38 +17,38 @@ struct MailCoachWidget: Widget {
 
 // MARK: - Timeline
 
-struct Entry: TimelineEntry {
+struct MailEntry: TimelineEntry {
     enum Status { case live, cached, unpaired }
     let date: Date
     let payload: WidgetPayload?
     let status: Status
 }
 
-struct Provider: TimelineProvider {
-    func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), payload: .sample, status: .live)
+struct MailProvider: TimelineProvider {
+    func placeholder(in context: Context) -> MailEntry {
+        MailEntry(date: Date(), payload: .sample, status: .live)
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
+    func getSnapshot(in context: Context, completion: @escaping (MailEntry) -> Void) {
         if context.isPreview {
-            completion(Entry(date: Date(), payload: SharedStore.payload ?? .sample, status: .live))
+            completion(MailEntry(date: Date(), payload: SharedStore.payload ?? .sample, status: .live))
         } else {
             completion(cachedEntry())
         }
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<MailEntry>) -> Void) {
         let next = Date().addingTimeInterval(20 * 60)
         guard let api = API.current else {
-            completion(Timeline(entries: [Entry(date: Date(), payload: nil, status: .unpaired)], policy: .after(next)))
+            completion(Timeline(entries: [MailEntry(date: Date(), payload: nil, status: .unpaired)], policy: .after(next)))
             return
         }
         Task {
-            var entry: Entry
+            var entry: MailEntry
             do {
                 let p = try await api.widget(timeout: 12)
                 SharedStore.payload = p
-                entry = Entry(date: Date(), payload: p, status: .live)
+                entry = MailEntry(date: Date(), payload: p, status: .live)
             } catch {
                 entry = cachedEntry()
             }
@@ -63,17 +56,17 @@ struct Provider: TimelineProvider {
         }
     }
 
-    private func cachedEntry() -> Entry {
-        if !SharedStore.isPaired { return Entry(date: Date(), payload: nil, status: .unpaired) }
-        return Entry(date: Date(), payload: SharedStore.payload, status: .cached)
+    private func cachedEntry() -> MailEntry {
+        if !SharedStore.isPaired { return MailEntry(date: Date(), payload: nil, status: .unpaired) }
+        return MailEntry(date: Date(), payload: SharedStore.payload, status: .cached)
     }
 }
 
 // MARK: - Views
 
-struct WidgetView: View {
+struct MailWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: Entry
+    let entry: MailEntry
 
     var body: some View {
         content
@@ -104,7 +97,7 @@ private struct Unpaired: View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            Text("Open Mail Coach to pair")
+            Text("Open Pendler to pair mail")
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
@@ -112,14 +105,14 @@ private struct Unpaired: View {
             }
         case .accessoryRectangular:
             VStack(alignment: .leading) {
-                Text("Mail Coach").font(.headline)
+                Text("Uni-Mail").font(.headline)
                 Text("Open the app to pair").font(.caption)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         default:
             VStack(spacing: 6) {
                 Image(systemName: "envelope.badge").font(.title2).foregroundStyle(.blue)
-                Text("Open Mail Coach to pair").font(.caption).multilineTextAlignment(.center)
+                Text("Open Pendler to pair mail").font(.caption).multilineTextAlignment(.center)
             }
         }
     }

@@ -50,7 +50,7 @@ struct UpdateSection: View {
                     HStack { Text("Check for updates"); if model.checkingUpdate { Spacer(); ProgressView() } }
                 }
             }
-            Button("Add Mail Coach source to SideStore") {
+            Button("Add Pendler source to SideStore") {
                 Task { note = (await Updates.addSource()) ? nil : "Could not open SideStore." }
             }
             if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }

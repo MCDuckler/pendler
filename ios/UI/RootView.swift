@@ -1,7 +1,10 @@
 import SwiftUI
 
+enum RootTab: Int { case heute, woche, navigator, mail, settings }
+
 struct RootView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var commute: CommuteModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -9,23 +12,24 @@ struct RootView: View {
                 UpdateBanner(release: r)
             }
             TabView(selection: $model.selectedTab) {
-                TodayView()
-                    .tabItem { Label("Today", systemImage: "tray.full") }
+                HeuteView()
+                    .tabItem { Label("Heute", systemImage: "figure.walk.departure") }
+                    .tag(RootTab.heute.rawValue)
+                WocheView()
+                    .tabItem { Label("Woche", systemImage: "calendar") }
+                    .tag(RootTab.woche.rawValue)
+                NavigatorView()
+                    .tabItem { Label("Navigator", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+                    .tag(RootTab.navigator.rawValue)
+                MailTabView()
+                    .tabItem { Label("Mail", systemImage: "tray.full") }
                     .badge(model.openCount)
-                    .tag(0)
-                CategoryListView(category: .waiting)
-                    .tabItem { Label("Waiting", systemImage: "hourglass") }
-                    .tag(1)
-                CategoryListView(category: .fyi)
-                    .tabItem { Label("FYI", systemImage: "info.circle") }
-                    .tag(2)
-                DoneView()
-                    .tabItem { Label("Done", systemImage: "checkmark.circle") }
-                    .tag(3)
+                    .tag(RootTab.mail.rawValue)
                 SettingsView()
-                    .tabItem { Label("Settings", systemImage: "gearshape") }
-                    .tag(4)
+                    .tabItem { Label("Einstellungen", systemImage: "gearshape") }
+                    .tag(RootTab.settings.rawValue)
             }
+            .tint(Brand.accent)
         }
         .sheet(item: $model.openThread) { t in
             NavigationStack { ThreadView(threadID: t.id) }
@@ -34,17 +38,40 @@ struct RootView: View {
     }
 }
 
-/// Shown instead of a list when there is no server yet.
+/// Mail Coach's four lists behind one tab.
+struct MailTabView: View {
+    @EnvironmentObject var model: AppModel
+    @State private var section = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Liste", selection: $section) {
+                Text("Today").tag(0); Text("Waiting").tag(1); Text("FYI").tag(2); Text("Done").tag(3)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            switch section {
+            case 1: CategoryListView(category: .waiting)
+            case 2: CategoryListView(category: .fyi)
+            case 3: DoneView()
+            default: TodayView()
+            }
+        }
+    }
+}
+
+/// Shown instead of a list when there is no mail server yet.
 struct PairPrompt: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         ContentUnavailableView {
-            Label("Not paired", systemImage: "link.badge.plus")
+            Label("Uni-Mail nicht gekoppelt", systemImage: "link.badge.plus")
         } description: {
-            Text("Open the pairing link from your Mail Coach server on this phone, or enter the server and token in Settings.")
+            Text("Öffne den Kopplungslink von Mail Coach auf diesem iPhone oder trage Server und Token in den Einstellungen ein.")
         } actions: {
-            Button("Open Settings") { model.selectedTab = 4 }
+            Button("Einstellungen") { model.selectedTab = RootTab.settings.rawValue }
                 .buttonStyle(.borderedProminent)
         }
     }
@@ -56,15 +83,7 @@ struct ErrorStrip: View {
 
     var body: some View {
         if let e = model.error {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text(e).font(.footnote).lineLimit(2)
-                Spacer()
-                Button { model.error = nil } label: { Image(systemName: "xmark").font(.footnote.weight(.bold)) }
-                    .foregroundStyle(.secondary)
-            }
-            .padding(10)
-            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            ErrorBanner(text: e) { model.error = nil }
         }
     }
 }

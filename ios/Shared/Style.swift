@@ -14,9 +14,9 @@ extension ItemKind {
 
 enum Links {
     static func item(_ id: String) -> URL {
-        URL(string: "mailcoach://item/\(id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id)")!
+        URL(string: "pendler://mail/item/\(id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id)")!
     }
-    static let today = URL(string: "mailcoach://today")!
+    static let today = URL(string: "pendler://mail")!
 }
 
 /// "Tomorrow", "Overdue 2d", "Fri" — red when overdue or within two days.

@@ -110,25 +110,29 @@ final class AppModel: ObservableObject {
         Task { try? await UNUserNotificationCenter.current().setBadgeCount(0) }
     }
 
-    /// mailcoach://pair?url=…&token=…, mailcoach://item/<id>, mailcoach://today
+    /// pendler://pair?url=…&token=…   (Pendler server, from `pendler pair` on the box)
+    /// pendler://today, pendler://mail, pendler://mail/item/<id>
+    /// mailcoach://pair?url=…&token=…, mailcoach://item/<id>   (Mail Coach server, old links)
     func handle(_ url: URL) {
-        guard url.scheme == "mailcoach" else { return }
-        switch url.host {
-        case "pair":
-            let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let token = q.first { $0.name == "token" }?.value ?? ""
+        let parts = url.pathComponents.filter { $0 != "/" }
+        switch (url.scheme, url.host) {
+        case ("pendler", "pair"):
+            let base = q.first { $0.name == "url" }?.value ?? SharedStore.defaultPendlerURL
+            if !token.isEmpty { CommuteModel.shared.pair(url: base, token: token) }
+            selectedTab = RootTab.settings.rawValue
+        case ("mailcoach", "pair"):
             let base = q.first { $0.name == "url" }?.value ?? SharedStore.defaultBaseURL
-            if let token = q.first(where: { $0.name == "token" })?.value, !token.isEmpty {
-                pair(url: base, token: token)
-                selectedTab = 0
-            }
-        case "item":
-            let parts = url.pathComponents.filter { $0 != "/" }
-            if let id = parts.first, !id.isEmpty {
-                selectedTab = 0
-                openThread = OpenThread(id: id)
-            }
+            if !token.isEmpty { pair(url: base, token: token) }
+            selectedTab = RootTab.mail.rawValue
+        case ("pendler", "mail"), ("mailcoach", "item"), ("mailcoach", "today"):
+            selectedTab = RootTab.mail.rawValue
+            // pendler://mail/item/<id> → ["item", id]; mailcoach://item/<id> → [id]
+            let id = url.scheme == "pendler" ? (parts.first == "item" ? parts.dropFirst().first : nil) : parts.first
+            if let id, !id.isEmpty { openThread = OpenThread(id: id) }
         default:
-            selectedTab = 0
+            selectedTab = RootTab.heute.rawValue
         }
     }
 

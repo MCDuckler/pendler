@@ -1,10 +1,11 @@
 import Foundation
 import BackgroundTasks
 
-/// One app-refresh task: fetch the summary so the badge and the widget cache stay
-/// current even when the app is not opened. iOS decides when (roughly every 30 min+).
+/// One app-refresh task: fetch today's plan and the mail summary so reminders, the
+/// badge and the widget caches stay current when the app is not opened. iOS decides
+/// when (roughly every 30 min+).
 enum Background {
-    static let refreshID = "dance.duckduck.mailcoach.refresh"
+    static let refreshID = "dance.duckduck.pendler.refresh"
 
     static func register() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: refreshID, using: nil) { task in
@@ -21,8 +22,9 @@ enum Background {
     private static func handle(_ task: BGTask) {
         schedule()
         let work = Task { @MainActor in
+            await CommuteModel.shared.refresh()
             await AppModel.shared.load()
-            task.setTaskCompleted(success: AppModel.shared.error == nil)
+            task.setTaskCompleted(success: AppModel.shared.error == nil && CommuteModel.shared.error == nil)
         }
         task.expirationHandler = { work.cancel() }
     }
