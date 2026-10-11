@@ -23,7 +23,7 @@ let timetableError = null;
 let timetableLoading = false;
 
 // ─── Navigator (ad-hoc routing) state ────────────────
-let activeTab = 'dashboard';   // 'dashboard' | 'navigator'
+let activeTab = 'dashboard';   // 'dashboard' | 'fahrplan' | 'navigator'
 let navFrom = null;            // location object
 let navTo = null;
 let navTimeMode = 'departure'; // 'departure' | 'arrival'
@@ -46,8 +46,19 @@ function defaultConfig() {
     viaStops: [],              // [{ id, name, type, latitude, longitude }]
     excludedProducts: [],      // e.g. ['BUS'] — transport types to exclude
     scheduleMode: 'manual',    // 'manual' | 'timetable'
+    // Timetable is concept-hardwired to HS Pforzheim · Visuelle Kommunikation.
+    // The onboarding picks uni + course for display only; this URL is always used.
     timetableUrl: 'https://hic.hs-pforzheim.de/lsf/rds?state=wplan&act=stg&pool=stg&show=plan&P.vx=mittel&r_zuordabstgv.semvonint=3&r_zuordabstgv.sembisint=3&k_abstgv.abstgvnr=1011',
     timetableLeadMin: 15,      // minutes before first class to arrive
+    universityId: 'pforzheim',
+    university: 'Hochschule Pforzheim',
+    source: 'lsf',             // 'lsf' native picker | 'ics' pasted iCal link
+    icsUrl: '',                // the pasted .ics link (kept separate from LSF url)
+    courseId: 1011,            // LSF abstgvnr (1011 = Visuelle Kommunikation)
+    coursePu: null,            // StarPlan planning unit of the picked group (multi-campus)
+    course: 'Visuelle Kommunikation',
+    semester: 3,               // semvonint/sembisint
+    onboarded: false,          // first-run onboarding completed?
     days: {
       0: { enabled: false, outboundTime: '09:00', returnTime: '14:00' },
       1: { enabled: true,  outboundTime: '08:00', returnTime: '17:00' },
@@ -73,6 +84,12 @@ function loadConfig() {
     if (!c.returnMode) c.returnMode = def.returnMode;
     if (!c.scheduleMode) c.scheduleMode = def.scheduleMode;
     if (c.timetableLeadMin === undefined) c.timetableLeadMin = def.timetableLeadMin;
+    if (c.courseId === undefined) c.courseId = def.courseId;
+    if (c.semester === undefined) c.semester = def.semester;
+    if (c.source === undefined) c.source = def.source;
+    if (c.icsUrl === undefined) c.icsUrl = def.icsUrl;
+    // Existing users (pre-onboarding) with a full setup skip the intro.
+    if (c.onboarded === undefined) c.onboarded = !!(c.homeLocation && c.workLocation);
     if (c.days) {
       for (const d of Object.values(c.days)) {
         if (d.departureTime && !d.outboundTime) { d.outboundTime = d.departureTime; delete d.departureTime; }
@@ -410,8 +427,9 @@ async function changeWeek(delta) {
   timetableData = null;
   // Try loading from per-week cache first
   loadCachedTimetable();
-  renderDashboard();
+  renderActiveTab();
   await refreshJourneys();
+  renderActiveTab();
 }
 
 // ─── Mode labels ─────────────────────────────────────
@@ -838,6 +856,11 @@ function renderSchedule() {
     </div>`;
   }
 
+  html += `
+    <div class="schedule-section">
+      <button class="ob-restart-btn" onclick="restartOnboarding()">Einrichtung neu starten</button>
+    </div>`;
+
   el.innerHTML = html;
 }
 
@@ -907,12 +930,42 @@ function invalidateJourneys() {
 function renderTimetableSettings() {
   let html = `
     <div class="schedule-section">
-      <div class="schedule-section-title">Stundenplan (LSF)</div>
+      <div class="schedule-section-title">Stundenplan</div>
       <div class="station-card">
-        <div class="timetable-url-row">
-          <label class="timetable-label" for="timetable-url">Stundenplan-URL</label>
-          <input type="url" id="timetable-url" class="timetable-input" placeholder="https://hic.hs-pforzheim.de/lsf/rds?state=wplan&..." value="${escAttr(config.timetableUrl || '')}" onchange="setTimetableUrl(this.value)">
+        <div class="station-row" role="button" tabindex="0" onclick="editStundenplan()" onkeydown="onKeyActivate(event)">
+          <div class="station-icon work">\u{1F393}</div>
+          <div>
+            <div class="station-label">Hochschule</div>
+            <div class="station-name">${escHtml(config.university || 'Hochschule Pforzheim')}</div>
+          </div>
+          <div class="station-chevron">›</div>
         </div>
+        ${config.source === 'ics' ? `
+        <div class="station-row" role="button" tabindex="0" onclick="editStundenplan()" onkeydown="onKeyActivate(event)">
+          <div class="station-icon via">\u{1F517}</div>
+          <div>
+            <div class="station-label">iCal-Link</div>
+            <div class="station-name${config.timetableUrl ? '' : ' placeholder'}">${config.timetableUrl ? escHtml(config.timetableUrl.replace(/^https?:\/\//, '').slice(0, 42)) : 'Link hinzufügen'}</div>
+          </div>
+          <div class="station-chevron">›</div>
+        </div>` : `
+        <div class="station-row" role="button" tabindex="0" onclick="editStundenplan()" onkeydown="onKeyActivate(event)">
+          <div class="station-icon via">\u{1F4DA}</div>
+          <div>
+            <div class="station-label">Studiengang</div>
+            <div class="station-name">${escHtml(config.course || 'Visuelle Kommunikation')}</div>
+          </div>
+          <div class="station-chevron">›</div>
+        </div>
+        ${config.source === 'lsf' ? `
+        <div class="station-row" role="button" tabindex="0" onclick="editStundenplan()" onkeydown="onKeyActivate(event)">
+          <div class="station-icon home">\u{1F4C5}</div>
+          <div>
+            <div class="station-label">Semester</div>
+            <div class="station-name">${config.semester || 3}. Semester</div>
+          </div>
+          <div class="station-chevron">›</div>
+        </div>` : ''}`}
         <div class="timetable-url-row">
           <label class="timetable-label" for="timetable-lead">Vorlaufzeit (Min.)</label>
           <input type="number" id="timetable-lead" class="timetable-input short" min="0" max="120" value="${config.timetableLeadMin || 15}" onchange="setTimetableLead(this.value)">
@@ -1074,6 +1127,11 @@ function selectLocation(locJson) {
     config.viaStops.push(loc);
   }
   saveConfig();
+
+  // During first-run onboarding the search returns to the onboarding step,
+  // not the settings sheet.
+  if (onboarding) { closeSearch(); renderOnboarding(); return; }
+
   closeSearch();
   renderSchedule();
   invalidateJourneys();
@@ -1145,11 +1203,6 @@ function setScheduleMode(mode) {
   }
 }
 
-function setTimetableUrl(url) {
-  config.timetableUrl = url.trim();
-  saveConfig();
-}
-
 function setTimetableLead(val) {
   config.timetableLeadMin = Math.max(0, parseInt(val, 10) || 15);
   saveConfig();
@@ -1165,28 +1218,551 @@ async function reloadTimetable() {
   invalidateJourneys();
 }
 
+// ─── Onboarding (first-run setup) ────────────────────
+// Concept flow: Welcome → Standorte → Hochschule/Studiengang → Fertig.
+// The Stundenplan step is a dummy picker — any choice keeps the default LSF URL.
+const OB_STEPS = 4;
+let onboarding = false;
+let onboardStep = 0;
+let obPickerMode = null;  // full-screen picker: 'uni' | 'course' | null
+let obPickerQuery = '';
+
+// Universities: 'lsf' = native course picker (host/path + course catalog);
+// 'ics' = generic fallback where the user pastes a timetable .ics link that the
+// backend loads directly (works for any uni/system that exports iCal).
+// Every LSF entry was verified end-to-end (catalog → wplan → iCalendarPlan →
+// real events); instances without that export (e.g. Münster, Weimar) are
+// deliberately absent — they fall back to 'Andere Hochschule'.
+const UNIVERSITIES = [
+  { id: 'pforzheim', name: 'Hochschule Pforzheim', system: 'lsf', host: 'hic.hs-pforzheim.de', path: '/lsf' },
+  { id: 'uni-frankfurt', name: 'Goethe-Universität Frankfurt', system: 'lsf', host: 'qis.server.uni-frankfurt.de', path: '/qisserver', catalog: 'unis/uni-frankfurt.json' },
+  { id: 'hhu', name: 'Heinrich-Heine-Universität Düsseldorf', system: 'lsf', host: 'lsf.hhu.de', path: '/qisserver', catalog: 'unis/hhu.json' },
+  { id: 'hs-weingarten', name: 'Hochschule Ravensburg-Weingarten', system: 'lsf', host: 'lsf.hs-weingarten.de', path: '/qisserver', catalog: 'unis/hs-weingarten.json' },
+  { id: 'hs-worms', name: 'Hochschule Worms', system: 'lsf', host: 'lsf.hs-worms.de', path: '/qisserver', catalog: 'unis/hs-worms.json' },
+  // StarPlan: groups already encode program+semester; timetable = direct .ics.
+  // pu = current planning unit — bump + re-run scrape-starplan each semester.
+  // Catalog entries may carry their own pu (multi-campus instances like W-HS).
+  { id: 'hdm-stuttgart', name: 'Hochschule der Medien Stuttgart', system: 'starplan', host: 'splan.hdm-stuttgart.de', base: '/splan', pu: 45, catalog: 'unis/hdm-stuttgart.json' },
+  { id: 'hs-heilbronn', name: 'Hochschule Heilbronn', system: 'starplan', host: 'splan.hs-heilbronn.de', base: '/splan', pu: 47, catalog: 'unis/hs-heilbronn.json' },
+  { id: 'hs-furtwangen', name: 'Hochschule Furtwangen', system: 'starplan', host: 'splan.hs-furtwangen.de', base: '/starplan', pu: 6, catalog: 'unis/hs-furtwangen.json' },
+  { id: 'th-rosenheim', name: 'TH Rosenheim', system: 'starplan', host: 'splan.th-rosenheim.de', base: '/splan', pu: 44, catalog: 'unis/th-rosenheim.json' },
+  { id: 'w-hs', name: 'Westfälische Hochschule', system: 'starplan', host: 'splan.w-hs.de', base: '/splan', pu: 100, catalog: 'unis/w-hs.json' },
+  { id: 'htw-berlin', name: 'HTW Berlin', system: 'lsf', host: 'lsf.htw-berlin.de', path: '/qisserver', catalog: 'unis/htw-berlin.json' },
+  { id: 'uni-saarland', name: 'Universität des Saarlandes', system: 'lsf', host: 'www.lsf.uni-saarland.de', path: '/qisserver', catalog: 'unis/uni-saarland.json' },
+  { id: 'uni-hildesheim', name: 'Universität Hildesheim', system: 'lsf', host: 'lsf.uni-hildesheim.de', path: '/qisserver', catalog: 'unis/uni-hildesheim.json' },
+  { id: 'other', name: 'Andere Hochschule', system: 'ics' },
+];
+function selectedUni() { return UNIVERSITIES.find(u => u.id === config.universityId) || UNIVERSITIES[0]; }
+
+// Course catalogs: Pforzheim is baked in (default uni, works offline); the rest
+// are static JSON fetched on demand. null = not loaded yet.
+// (Pforzheim resolved inside coursesFor — HSPF_COURSES is declared below.)
+const uniCatalogs = {};
+const catalogFetching = new Set();
+function coursesFor(uniId) {
+  if (uniId === 'pforzheim') return HSPF_COURSES;
+  return uniCatalogs[uniId] || null;
+}
+function loadCatalog(uni) {
+  if (!uni.catalog || uniCatalogs[uni.id] || catalogFetching.has(uni.id)) return;
+  catalogFetching.add(uni.id);
+  fetch(uni.catalog)
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(list => { uniCatalogs[uni.id] = list; })
+    .catch(() => { uniCatalogs[uni.id] = []; })
+    .finally(() => {
+      catalogFetching.delete(uni.id);
+      if (obPickerMode) renderObPicker();
+      else if (onboarding) renderOnboarding();
+    });
+}
+// HS Pforzheim Studiengänge (abstgvnr → name), from LSF wplan tree.
+const HSPF_COURSES = [{id:1004,a:"BAD",n:"Accessoire Design"},{id:1055,a:"MIT",n:"Advanced Information Technology"},{id:1049,a:"BAMB",n:"Allgemeiner Maschinenbau"},{id:1057,a:"BAI",n:"Angewandte Informatik"},{id:1053,a:"BAM",n:"Angewandte Mathematik"},{id:1029,a:"BNRE",n:"Bachelor Nachhaltigkeit und Ressourceneffizienz"},{id:1007,a:"BID",n:"BC Industrial Design"},{id:1008,a:"BMD",n:"BC Mode"},{id:323,a:"BREM",n:"BC Ressourceneffizienz-Management"},{id:1006,a:"BAS",n:"BC Schmuck"},{id:1009,a:"BSOA",n:"BC Schmuck u. Obj. d. ATK"},{id:1010,a:"BTD",n:"BC Transportation Design"},{id:1011,a:"BVK",n:"BC Visuelle Kommunikation"},{id:1048,a:"BBME",n:"Biomechanik und Engineering"},{id:1002,a:"BDEM",n:"BSBA/DigitalEnterpriseMan"},{id:1038,a:"BBA/BDBM",n:"Business Administration / Digital Business Managem"},{id:1035,a:"BBA/BIB",n:"Business Administration / International Business"},{id:1039,a:"BBA/BIM",n:"Business Administration / International Marketing"},{id:189,a:"BCR",n:"BW/Controlling"},{id:191,a:"BEL",n:"BW/EinkaufLogistik"},{id:145,a:"BIM",n:"BW/Intern. Marketing"},{id:169,a:"BIB",n:"BW/International Business"},{id:186,a:"BMA",n:"BW/Marketing"},{id:139,a:"BW/MA",n:"BW/Marketing"},{id:330,a:"BMKWE",n:"BW/MarketingKomm. u. Werbung"},{id:239,a:"BW/MF",n:"BW/Markt- u. Komm.forsch."},{id:328,a:"BMFKP",n:"BW/Marktforsch. KonsumPsy"},{id:187,a:"BMF",n:"BW/Marktforschung"},{id:192,a:"BPM",n:"BW/Personalmanagement"},{id:329,a:"BSWP",n:"BW/Steuern und Wirtsch.Pr"},{id:190,a:"BSR",n:"BW/SteuerRev"},{id:321,a:"BWE",n:"BW/Werbung"},{id:238,a:"BW/WE",n:"BW/Werbung (Mark.-Komm.)"},{id:331,a:"BWMI",n:"BW/WirtschaftsinfManageIT"},{id:236,a:"BW/WK",n:"BW/Wirtschaftsinformatik"},{id:193,a:"BWK",n:"BW/Wirtschaftsinformatik"},{id:1032,a:"BWL/BCAF",n:"BWL / Controlling Accounting und Finanzmanagement"},{id:1033,a:"BWL/BELS",n:"BWL / Einkauf Logistik und Supply Chain Managem."},{id:1044,a:"BWL/BKPM",n:"BWL / Konsumentenpsychologie und Marktforschung"},{id:1043,a:"BWL/BMA",n:"BWL / Marketing"},{id:1036,a:"BWL/BMKD",n:"BWL / Marketingkommunikation und Digital Marketing"},{id:1042,a:"BWL/BMMD",n:"BWL / Mediamanagement und Digital Media"},{id:1034,a:"BWL/BPM",n:"BWL / Personalmanagement"},{id:1037,a:"BWL/BSWP",n:"BWL / Steuern und Wirtschaftsprüfung"},{id:1040,a:"BWL/BNRE",n:"BWL/Nachhaltigkeit und Ressourceneffizienz"},{id:1041,a:"BWL/BWI",n:"BWL/Wirtschaftsinformatik"},{id:1047,a:"MDBM",n:"Digital Business Management"},{id:151,a:"BET",n:"Elektrotechnik"},{id:336,a:"MHRM",n:"Human Resources Manag."},{id:327,a:"MIDM",n:"Innovatives Dienstleistungsmarketing"},{id:1012,a:"BIMD",n:"Intermediales Design"},{id:172,a:"ISP",n:"International"},{id:1001,a:"IMEP",n:"International MEP"},{id:1027,a:"KGV",n:"KATAPULT - Gestalterischer Vorkurs"},{id:1054,a:"BKI",n:"Künstliche Intelligenz"},{id:1003,a:"MCCM",n:"M.Sc. Corp. Com. Managem."},{id:184,a:"MPE",n:"M.Sc. Produktentwicklung"},{id:210,a:"MAT",n:"MA Auditing and Taxation"},{id:215,a:"MCM",n:"MA Communication Manag."},{id:1013,a:"MCD",n:"MA Creative Direction"},{id:1019,a:"MDFM",n:"MA Design and Future Making"},{id:194,a:"MES",n:"MA Embedded Systems"},{id:1018,a:"MEM",n:"MA Engineering and Management"},{id:307,a:"MIS",n:"MA Information Systems"},{id:1000,a:"MLICS",n:"MA LifeCycle&Sustainabili"},{id:1022,a:"MMI",n:"MA Marketing Intelligence"},{id:1020,a:"MMS",n:"MA Mechatronische Systementwicklung"},{id:196,a:"MSM",n:"MA Service Marketing"},{id:1023,a:"MSI",n:"MA Strategisches Innovati"},{id:1028,a:"MTAL",n:"MA Taxation Auditing and Law"},{id:1014,a:"MTD",n:"MA Transp. Design"},{id:199,a:"BMBPE",n:"Maschinenbau Produktentwicklung"},{id:200,a:"BMBPTM",n:"Maschinenbau Produktionst. u. Management"},{id:322,a:"MABL",n:"Master of Arts in Auditing Business and Law"},{id:1045,a:"MAJ",n:"Master of Jewellery"},{id:1046,a:"MIM",n:"Master of Science in Industrial Management"},{id:211,a:"MBAE",n:"MBA and Engineering"},{id:185,a:"MBA IM",n:"MBA InternationalManagemt"},{id:198,a:"MACFA",n:"MControll. Finance + Acc"},{id:205,a:"BME",n:"Mechatronik"},{id:324,a:"BMMWP",n:"Media Management und Werbepsychologie"},{id:325,a:"BMT",n:"Medizintechnik"},{id:1056,a:"MMT",n:"Medizintechnik"},{id:1050,a:"BPTD",n:"Produktentwicklung und Technisches Design"},{id:107,a:"SIK",n:"Sozial- Methoden- und Interkulturelle Kompetenz"},{id:138,a:"BTI",n:"Technische Informatik"},{id:150,a:"BIN",n:"Wirtschaftsingenieurw."},{id:337,a:"BWING",n:"Wirtschaftsingenieurw."},{id:1052,a:"BWING CEE",n:"Wirtschaftsingenieurwesen / Circular Economy Engin"},{id:1025,a:"BWING ID",n:"Wirtschaftsingenieurwesen / Innovation u. Design"},{id:1051,a:"BWING IMO",n:"Wirtschaftsingenieurwesen / Intelligent Mobility"},{id:1058,a:"BWING MT",n:"Wirtschaftsingenieurwesen / Management und Technik"},{id:1026,a:"BWING IM",n:"Wirtschaftsingenieurwesen International Management"},{id:177,a:"BWR",n:"Wirtschaftsrecht"},{id:102,a:"",n:"ZERT | Zertifikatsprogramm PR-Referent"}];
+
+function startOnboarding(step = 0) {
+  onboarding = true;
+  onboardStep = step;
+  closeObPicker(true);
+  const el = document.getElementById('onboarding');
+  el.classList.remove('hidden');
+  el.setAttribute('aria-hidden', 'false');
+  renderOnboarding();
+}
+
+function closeOnboarding() {
+  closeObPicker(true);
+  const el = document.getElementById('onboarding');
+  el.classList.add('hidden');
+  el.setAttribute('aria-hidden', 'true');
+  onboarding = false;
+}
+
+function onboardNext() { if (onboardStep < OB_STEPS - 1) { onboardStep++; renderOnboarding(); } }
+function onboardBack() { if (onboardStep > 0) { onboardStep--; renderOnboarding(); } }
+
+// Settings → edit Hochschule/Studiengang: close the sheet first so the
+// onboarding overlay (lower z-index) isn't hidden behind it.
+function editStundenplan() { closeSettings(); startOnboarding(2); }
+function restartOnboarding() { closeSettings(); startOnboarding(0); }
+
+function selectUniversity(id) {
+  const u = UNIVERSITIES.find(x => x.id === id);
+  if (!u) return;
+  config.universityId = u.id;
+  config.university = u.name;
+  config.source = u.system;
+  if (u.system !== 'ics') {
+    const cs = coursesFor(u.id);
+    if (!cs) {
+      // catalog not loaded yet — no valid course until the user picks one
+      config.courseId = null; config.course = null;
+      loadCatalog(u);
+    } else if (!cs.some(c => c.id === config.courseId)) {
+      config.courseId = null; config.course = null;
+    }
+    rebuildTimetableUrl();
+  } else {
+    config.timetableUrl = config.icsUrl || '';   // restore any previously pasted link
+  }
+  saveConfig();
+  renderOnboarding();
+}
+
+// Build the LSF wplan URL for the selected uni's course + semester. The backend
+// follows this page to its iCal export (see functions/api/_timetable.js). For
+// 'ics' unis the timetableUrl is the pasted link, so we leave it untouched.
+function rebuildTimetableUrl() {
+  const uni = selectedUni();
+  if (!config.courseId) return;
+  if (uni.system === 'lsf') {
+    const sem = config.semester || 3;
+    config.timetableUrl = `https://${uni.host}${uni.path}/rds?state=wplan&act=stg&pool=stg`
+      + '&show=plan&P.vx=mittel'
+      + `&r_zuordabstgv.semvonint=${sem}&r_zuordabstgv.sembisint=${sem}&k_abstgv.abstgvnr=${config.courseId}`;
+  } else if (uni.system === 'starplan') {
+    // direct .ics feed — the backend's VCALENDAR branch parses it as-is.
+    // coursePu overrides for multi-campus instances (entry carried its own pu).
+    const pu = config.coursePu || uni.pu;
+    config.timetableUrl = `https://${uni.host}${uni.base}/ical?lan=de&puid=${pu}&type=pg&pgid=${config.courseId}`;
+  }
+}
+
+// ─── Full-screen picker (Hochschule / Studiengang) ───────────────────
+// Step 2 shows tappable rows (like the Standorte step); each opens this
+// overlay with a search field + scrollable results — the pattern that scales
+// to catalogs like Frankfurt's ~2700 programs.
+function openObPicker(mode) {
+  obPickerMode = mode;
+  obPickerQuery = '';
+  if (mode === 'course') loadCatalog(selectedUni());
+  const el = document.getElementById('ob-picker');
+  el.classList.remove('hidden');
+  renderObPicker();
+  setTimeout(() => document.getElementById('ob-picker-input')?.focus(), 80);
+}
+
+function closeObPicker(silent) {
+  obPickerMode = null;
+  obPickerQuery = '';
+  const el = document.getElementById('ob-picker');
+  if (el) el.classList.add('hidden');
+  if (!silent) renderOnboarding();
+}
+
+function renderObPicker() {
+  if (!obPickerMode) return;
+  const el = document.getElementById('ob-picker');
+  const title = obPickerMode === 'uni' ? 'Hochschule wählen' : 'Studiengang wählen';
+  const ph = obPickerMode === 'uni' ? 'Hochschule suchen…' : 'Studiengang suchen…';
+  el.innerHTML = `
+    <div class="ob-picker-inner">
+      <div class="ob-picker-head">
+        <span class="ob-picker-title">${title}</span>
+        <button class="ob-picker-cancel" onclick="closeObPicker()">Abbrechen</button>
+      </div>
+      <input id="ob-picker-input" class="ob-search" type="text" placeholder="${ph}"
+             autocomplete="off" autocorrect="off" spellcheck="false"
+             value="${escAttr(obPickerQuery)}" oninput="obPickerInput(this.value)">
+      <div id="ob-picker-list" class="ob-picker-list">${obPickerListHtml()}</div>
+    </div>`;
+}
+
+function obPickerInput(q) {
+  obPickerQuery = q;
+  const list = document.getElementById('ob-picker-list');
+  if (list) list.innerHTML = obPickerListHtml();
+}
+
+function obPickerListHtml() {
+  const tokens = obPickerQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const match = hay => tokens.every(t => hay.includes(t));
+
+  if (obPickerMode === 'uni') {
+    const uniBtn = u => {
+      const tag = u.system === 'ics' ? ' <span class="ob-course-abbr">iCal-Link</span>' : '';
+      return `<button class="ob-option${config.universityId === u.id ? ' active' : ''}" onclick="pickObUni('${u.id}')">
+        <span class="ob-course-name">${escHtml(u.name)}${tag}</span><span class="ob-option-check">✓</span></button>`;
+    };
+    const items = UNIVERSITIES.filter(u => !tokens.length || match(u.name.toLowerCase()));
+    if (!items.length)
+      return uniBtn(UNIVERSITIES.find(u => u.id === 'other'))
+        + '<div class="ob-course-empty">Nicht dabei? Wähle „Andere Hochschule“ und nutze deinen iCal-Link.</div>';
+    return items.map(uniBtn).join('');
+  }
+
+  // course mode
+  const list = coursesFor(config.universityId);
+  if (!list) return '<div class="ob-course-empty">Studiengänge werden geladen…</div>';
+  if (!list.length) return '<div class="ob-course-empty">Studiengänge konnten nicht geladen werden. Prüfe deine Verbindung.</div>';
+  const items = tokens.length
+    ? list.filter(c => match((c.a + ' ' + c.n).toLowerCase())).slice(0, 40)
+    : list.slice(0, 25);
+  if (!items.length) return '<div class="ob-course-empty">Keine Treffer</div>';
+  const more = !tokens.length && list.length > items.length
+    ? `<div class="ob-course-empty">${list.length} Studiengänge insgesamt — tippe, um zu filtern.</div>` : '';
+  return items.map(c => `<button class="ob-option${c.id === config.courseId ? ' active' : ''}" onclick="pickObCourse(${c.id})">
+      <span class="ob-course-name">${escHtml(c.n)}${c.a ? ` <span class="ob-course-abbr">${escHtml(c.a)}</span>` : ''}</span>
+      <span class="ob-option-check">✓</span></button>`).join('') + more;
+}
+
+function pickObUni(id) {
+  selectUniversity(id);
+  if (selectedUni().system === 'ics') { closeObPicker(); return; }
+  // flow straight into the course pick — the natural next step
+  obPickerMode = 'course';
+  obPickerQuery = '';
+  loadCatalog(selectedUni());
+  renderObPicker();
+  setTimeout(() => document.getElementById('ob-picker-input')?.focus(), 80);
+}
+
+function pickObCourse(id) {
+  selectCourse(id);
+  closeObPicker();
+}
+
+function selectCourse(id) {
+  const c = (coursesFor(config.universityId) || []).find(x => x.id === id);
+  if (!c) return;
+  config.courseId = c.id;
+  config.course = c.n;
+  config.coursePu = c.pu || null;   // multi-campus StarPlan entries carry a pu
+  config.scheduleMode = 'timetable';
+  rebuildTimetableUrl();
+  saveConfig();
+  renderOnboarding();   // refresh rows + footer (Weiter may have been disabled)
+}
+
+// Generic ICS: the pasted link is loaded verbatim by the backend.
+function setIcsUrl(url) {
+  config.icsUrl = url.trim();
+  config.timetableUrl = config.icsUrl;
+  config.source = 'ics';
+  config.scheduleMode = 'timetable';
+  saveConfig();
+  const btn = document.querySelector('.ob-footer .ob-btn.primary');
+  if (btn) btn.disabled = !/^https?:\/\/.+/i.test(config.timetableUrl);
+}
+
+function setSemester(n) {
+  config.semester = Math.max(1, Math.min(8, n || 1));
+  config.scheduleMode = 'timetable';
+  rebuildTimetableUrl();
+  saveConfig();
+  const v = document.getElementById('ob-sem-val'); if (v) v.textContent = config.semester;
+}
+
+function finishOnboarding() {
+  config.onboarded = true;
+  config.scheduleMode = 'timetable';
+  rebuildTimetableUrl();
+  saveConfig();
+  closeOnboarding();
+  renderDashboard();
+  if (config.homeLocation && config.workLocation) {
+    if (config.timetableUrl) {
+      fetchTimetable().then(() => { renderDashboard(); refreshJourneys(); });
+    } else {
+      refreshJourneys();
+    }
+  }
+}
+
+function renderOnboarding() {
+  const el = document.getElementById('onboarding');
+  el.innerHTML = `
+    <div class="ob-inner">
+      ${onboardStep > 0 && onboardStep < OB_STEPS - 1 ? obProgress() : '<div class="ob-progress-spacer"></div>'}
+      <div class="ob-body">${obBody()}</div>
+      <div class="ob-footer">${obFooter()}</div>
+    </div>`;
+}
+
+function obProgress() {
+  let dots = '';
+  for (let i = 1; i <= OB_STEPS - 2; i++)
+    dots += `<span class="ob-dot${i === onboardStep ? ' active' : ''}${i < onboardStep ? ' done' : ''}"></span>`;
+  return `<div class="ob-progress">${dots}</div>`;
+}
+
+function obBody() {
+  if (onboardStep === 0) {
+    return `
+      <div class="ob-welcome">
+        <img class="ob-logo" src="icon.svg" alt="Pendler">
+        <h1 class="ob-wordmark">Pendler</h1>
+        <p class="ob-tagline">Stundenplan und Fahrplan in einer App.</p>
+        <ul class="ob-features">
+          <li><span class="ob-feat-ico">\u{1F686}</span> Passende Züge zu deinen Vorlesungen</li>
+          <li><span class="ob-feat-ico">\u{1F5D3}️</span> Dein Stundenplan, automatisch geladen</li>
+          <li><span class="ob-feat-ico">\u{1F9ED}</span> Spontane Routen mit dem Navigator</li>
+        </ul>
+      </div>`;
+  }
+
+  if (onboardStep === 1) {
+    return `
+      <div class="ob-step">
+        <h2 class="ob-title">Wo pendelst du?</h2>
+        <p class="ob-sub">Wähle deine Ziel- und Endhaltestelle.</p>
+        <div class="ob-card">
+          <div class="station-row" role="button" tabindex="0" onclick="openSearch('home')" onkeydown="onKeyActivate(event)">
+            <div class="station-icon home">\u{1F3E0}</div>
+            <div>
+              <div class="station-label">Zuhause</div>
+              <div class="station-name${config.homeLocation ? '' : ' placeholder'}">${config.homeLocation ? escHtml(config.homeLocation.name || config.homeLocation.address) : 'Adresse oder Station wählen'}</div>
+            </div>
+            <div class="station-chevron">›</div>
+          </div>
+          <div class="station-row" role="button" tabindex="0" onclick="openSearch('work')" onkeydown="onKeyActivate(event)">
+            <div class="station-icon work">\u{1F393}</div>
+            <div>
+              <div class="station-label">Hochschule</div>
+              <div class="station-name${config.workLocation ? '' : ' placeholder'}">${config.workLocation ? escHtml(config.workLocation.name || config.workLocation.address) : 'Adresse oder Station wählen'}</div>
+            </div>
+            <div class="station-chevron">›</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  if (onboardStep === 2) {
+    const uni = selectedUni();
+    const isIcs = uni.system === 'ics';
+
+    // rows mirror the Standorte step — tap opens the full-screen picker
+    const uniRow = `
+      <div class="station-row" role="button" tabindex="0" onclick="openObPicker('uni')" onkeydown="onKeyActivate(event)">
+        <div class="station-icon work">\u{1F393}</div>
+        <div>
+          <div class="station-label">Hochschule</div>
+          <div class="station-name">${escHtml(uni.name)}</div>
+        </div>
+        <div class="station-chevron">›</div>
+      </div>`;
+
+    const courseRow = isIcs ? '' : `
+      <div class="station-row" role="button" tabindex="0" onclick="openObPicker('course')" onkeydown="onKeyActivate(event)">
+        <div class="station-icon via">\u{1F4DA}</div>
+        <div>
+          <div class="station-label">Studiengang</div>
+          <div class="station-name${config.courseId ? '' : ' placeholder'}">${config.courseId ? escHtml(config.course) : 'Studiengang wählen'}</div>
+        </div>
+        <div class="station-chevron">›</div>
+      </div>`;
+
+    let below = '';
+    if (isIcs) {
+      below = `
+        <div class="ob-field-label">iCal-Link (.ics)</div>
+        <input id="ob-ics" class="ob-search" type="url" inputmode="url" placeholder="https://…/stundenplan.ics"
+               autocomplete="off" autocorrect="off" spellcheck="false"
+               value="${escAttr(config.icsUrl || '')}" oninput="setIcsUrl(this.value)">
+        <p class="ob-hint">Abo-/Export-Link deines Stundenplans (LSF, Stud.IP, Rapla …). Wird direkt geladen.</p>`;
+    } else if (uni.system === 'lsf') {
+      // StarPlan groups already encode the semester → stepper is LSF-only.
+      below = `
+        <div class="ob-field-label">Semester</div>
+        <div class="ob-stepper">
+          <button class="ob-step-btn" onclick="setSemester((config.semester||3)-1)" aria-label="Semester weniger">−</button>
+          <span id="ob-sem-val" class="ob-stepper-val">${config.semester || 3}</span>
+          <button class="ob-step-btn" onclick="setSemester((config.semester||3)+1)" aria-label="Semester mehr">+</button>
+        </div>`;
+    }
+
+    return `
+      <div class="ob-step">
+        <h2 class="ob-title">Dein Stundenplan</h2>
+        <p class="ob-sub">Wähle deine Hochschule und deinen Studiengang.</p>
+        <div class="ob-card">
+          ${uniRow}
+          ${courseRow}
+        </div>
+        ${below}
+      </div>`;
+  }
+
+  // step 3 — finish
+  const homeName = config.homeLocation ? escHtml(config.homeLocation.name || config.homeLocation.address) : '—';
+  const workName = config.workLocation ? escHtml(config.workLocation.name || config.workLocation.address) : '—';
+  return `
+    <div class="ob-finish">
+      <div class="ob-check">✓</div>
+      <h2 class="ob-title">Alles bereit!</h2>
+      <p class="ob-sub">Du kannst alles später in den Einstellungen ändern.</p>
+      <div class="ob-summary">
+        <div class="ob-summary-row"><div class="ob-summary-ico">\u{1F3E0}</div><div><div class="ob-summary-label">Zuhause</div><div class="ob-summary-value">${homeName}</div></div></div>
+        <div class="ob-summary-row"><div class="ob-summary-ico">\u{1F393}</div><div><div class="ob-summary-label">Hochschule</div><div class="ob-summary-value">${workName}</div></div></div>
+        <div class="ob-summary-row"><div class="ob-summary-ico">\u{1F4DA}</div><div><div class="ob-summary-label">Stundenplan</div><div class="ob-summary-value">${config.source === 'ics'
+          ? 'Eigener iCal-Link'
+          : config.source === 'lsf'
+            ? `${escHtml(config.course || '—')} · ${config.semester || 3}. Semester`
+            : escHtml(config.course || '—')}</div></div></div>
+      </div>
+    </div>`;
+}
+
+function obFooter() {
+  if (onboardStep === 0)
+    return `<button class="ob-btn primary" onclick="onboardNext()">Los geht’s</button>`;
+  if (onboardStep === OB_STEPS - 1)
+    return `<button class="ob-btn primary" onclick="finishOnboarding()">Los geht’s</button>`;
+  const canNext = onboardStep === 1 ? !!(config.homeLocation && config.workLocation)
+                : onboardStep === 2 ? (selectedUni().system === 'ics'
+                    ? /^https?:\/\/.+/i.test(config.timetableUrl || '')
+                    : !!config.courseId)
+                : true;
+  return `
+    <button class="ob-btn ghost" onclick="onboardBack()">Zurück</button>
+    <button class="ob-btn primary" onclick="onboardNext()" ${canNext ? '' : 'disabled'}>Weiter</button>`;
+}
+
 // ─── Tabs ────────────────────────────────────────────
+// Table-driven so adding a tab means adding one entry (+ matching #tab-<id> /
+// #view-<id> in index.html), not another branch in switchTab.
+const TABS = {
+  dashboard: { title: 'Pendler',   showDate: true,  render: renderDashboard },
+  fahrplan:  { title: 'Wochenplan', showDate: false, render: renderFahrplan, onShow: ensureTimetableForFahrplan },
+  navigator: { title: 'Navigator', showDate: false, render: renderNavigator, onShow: onShowNavigator },
+};
+
+function renderActiveTab() {
+  (TABS[activeTab] || TABS.dashboard).render();
+}
+
 function switchTab(tab) {
-  if (activeTab === tab) return;
+  const cfg = TABS[tab];
+  if (!cfg || activeTab === tab) return;
   activeTab = tab;
-  const onDash = tab === 'dashboard';
-  document.getElementById('tab-dashboard').classList.toggle('active', onDash);
-  document.getElementById('tab-navigator').classList.toggle('active', !onDash);
-  document.getElementById('tab-dashboard').setAttribute('aria-selected', String(onDash));
-  document.getElementById('tab-navigator').setAttribute('aria-selected', String(!onDash));
-  document.getElementById('view-dashboard').classList.toggle('hidden', !onDash);
-  document.getElementById('view-navigator').classList.toggle('hidden', onDash);
-  document.getElementById('app-title').textContent = onDash ? 'Pendler' : 'Navigator';
-  document.getElementById('header-date').style.display = onDash ? '' : 'none';
+  for (const id of Object.keys(TABS)) {
+    const on = id === tab;
+    const btn = document.getElementById(`tab-${id}`);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', String(on));
+    document.getElementById(`view-${id}`).classList.toggle('hidden', !on);
+  }
+  document.getElementById('app-title').textContent = cfg.title;
+  document.getElementById('header-date').style.display = cfg.showDate ? '' : 'none';
 
   expandedCard = null;
-  if (onDash) {
-    renderDashboard();
-  } else {
-    if (!navInitialized) initNavigator();
-    renderNavigator();
-    if (navFrom && navTo && !navJourneys && !navLoading) refreshNavigator();
+  if (cfg.onShow) cfg.onShow();
+  cfg.render();
+}
+
+function onShowNavigator() {
+  if (!navInitialized) initNavigator();
+  if (navFrom && navTo && !navJourneys && !navLoading) refreshNavigator();
+}
+
+// Fahrplan needs the week's timetable. Reuse cache first; fetch if absent.
+function ensureTimetableForFahrplan() {
+  if (config.scheduleMode !== 'timetable' || !config.timetableUrl) return;
+  if (timetableData || timetableLoading) return;
+  loadCachedTimetable();
+  if (!timetableData) {
+    fetchTimetable().then(() => { if (activeTab === 'fahrplan') renderFahrplan(); });
   }
+}
+
+// ─── Rendering: Fahrplan (week overview) ─────────────
+function renderFahrplan() {
+  const el = document.getElementById('view-fahrplan');
+
+  if (config.scheduleMode !== 'timetable') {
+    el.innerHTML = `<div class="no-commute">
+      <div class="no-commute-icon">\u{1F4C5}</div>
+      <h3>Stundenplan nicht aktiv</h3>
+      <p>Aktiviere den Stundenplan-Modus in den Einstellungen, um den Wochenplan zu sehen.</p>
+    </div>`;
+    return;
+  }
+
+  const monday = getWeekMonday();
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  const fmt = d => `${d.getDate()}.${d.getMonth() + 1}.`;
+  const weekLabel = weekOffset === 0 ? 'Diese Woche' : `${fmt(monday)} – ${fmt(sunday)}`;
+
+  let html = `<div class="week-nav">
+    <button class="week-btn" onclick="changeWeek(-1)">‹</button>
+    <span class="week-label">${weekLabel}</span>
+    <button class="week-btn" onclick="changeWeek(1)">›</button>
+  </div>`;
+
+  if (timetableLoading && !timetableData) {
+    html += '<div class="fahrplan-status">Stundenplan wird geladen…</div>';
+    el.innerHTML = html;
+    return;
+  }
+  if (timetableError && !timetableData) {
+    html += `<div class="timetable-error">${escHtml(timetableError)}</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const today = new Date().getDay();
+  html += '<div class="fahrplan-days">';
+  for (const d of order) {
+    const events = getTimetableDay(d);
+    const isToday = d === today && weekOffset === 0;
+    if (!events || events.length === 0) {
+      html += `<div class="fahrplan-day empty${isToday ? ' today' : ''}">
+        <div class="fahrplan-day-head"><span class="fahrplan-day-name">${DAY_NAMES[d]}</span><span class="fahrplan-day-off">Frei</span></div>
+      </div>`;
+      continue;
+    }
+    const times = getTimetableTimes(d);
+    let evs = '';
+    for (const ev of events) {
+      const parts = ev.name.split(' - ');
+      const name = parts.length > 1 ? parts.slice(1).join(' - ') : ev.name;
+      evs += `<div class="fahrplan-event">
+        <div class="fahrplan-event-time">${ev.startTime} – ${ev.endTime}</div>
+        <div class="fahrplan-event-info">
+          <div class="fahrplan-event-name">${escHtml(name)}</div>
+          ${ev.location ? `<div class="fahrplan-event-room">${escHtml(ev.location)}</div>` : ''}
+        </div>
+      </div>`;
+    }
+    html += `<div class="fahrplan-day${isToday ? ' today' : ''}" role="button" tabindex="0" onclick="openDayInDashboard(${d})" onkeydown="onKeyActivate(event)">
+      <div class="fahrplan-day-head">
+        <span class="fahrplan-day-name">${DAY_NAMES[d]}</span>
+        <span class="fahrplan-day-meta">Ank. ${times.outboundTime} · ${events.length} Veranst.</span>
+      </div>
+      <div class="fahrplan-events">${evs}</div>
+    </div>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// Tap a day in the Fahrplan → jump to that day's commute on the dashboard.
+function openDayInDashboard(day) {
+  selectedDay = day;
+  resetJourneys();
+  switchTab('dashboard');
+  refreshJourneys();
 }
 
 // ─── Navigator ───────────────────────────────────────
@@ -1419,6 +1995,9 @@ function init() {
   }
 
   renderDashboard();
+
+  // First run: show the onboarding flow over the (empty) dashboard.
+  if (!config.onboarded) startOnboarding();
 
   document.getElementById('search-input').addEventListener('input', e => onSearchInput(e.target.value));
   document.getElementById('search-cancel').addEventListener('click', closeSearch);

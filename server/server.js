@@ -21,6 +21,7 @@ const MIME = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.ttf': 'font/ttf',
 };
 
 // ─── Location search ─────────────────────────────────

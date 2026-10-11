@@ -4,22 +4,26 @@
 // what prevents the two backends from drifting (recurring lectures, EXDATE,
 // semester end were previously only handled correctly in one of them).
 
-// Only these hosts may be fetched through the timetable proxy. Without this the
-// endpoint is an open proxy / SSRF: any caller could make our server fetch
-// arbitrary URLs (internal services, cloud metadata, traffic laundering).
-const ALLOWED_TIMETABLE_HOSTS = ['hs-pforzheim.de'];
-
+// The timetable proxy accepts user-supplied URLs (any uni's LSF page or a direct
+// .ics feed), so it must not become an SSRF vector. We don't allowlist specific
+// unis anymore; instead we require a public https(-upgradable) domain and block
+// internal/loopback/link-local/metadata targets and bare IP literals.
 export function assertAllowedTimetableUrl(rawUrl) {
-  let host;
+  let u;
   try {
-    const u = new URL(rawUrl);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('bad scheme');
-    host = u.hostname.toLowerCase();
+    u = new URL(rawUrl);
   } catch {
     throw new Error('Ungültige Stundenplan-URL');
   }
-  const ok = ALLOWED_TIMETABLE_HOSTS.some(h => host === h || host.endsWith(`.${h}`));
-  if (!ok) throw new Error('Stundenplan-URL nicht erlaubt');
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('Ungültige Stundenplan-URL');
+  const host = u.hostname.toLowerCase();
+  const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  const blocked =
+    host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') ||
+    host.endsWith('.local') || host.includes(':') ||   // IPv6 literals
+    isIpv4 ||                                           // no raw IP targets (blocks metadata/private)
+    !host.includes('.');                                // must be a real domain
+  if (blocked) throw new Error('Stundenplan-URL nicht erlaubt');
 }
 
 // Fetch the HIC timetable page, follow it to the iCal export, and parse all
@@ -35,16 +39,20 @@ export async function fetchTimetableEvents(timetableUrl) {
   // instead of hanging when HIC is down/unreachable.
   const baseUrl = timetableUrl.replace(/^http:/, 'https:');
 
-  let html;
+  let body;
   try {
-    html = await fetchText(baseUrl, { 'User-Agent': TIMETABLE_UA });
+    body = await fetchText(baseUrl, { 'User-Agent': TIMETABLE_UA });
   } catch {
     throw new Error('Stundenplan-Server nicht erreichbar (evtl. Wartung/Ausfall)');
   }
 
-  // Extract iCal export link (contains termine= with event IDs)
-  const icalMatch = html.match(/href="([^"]*moduleCall=iCalendarPlan[^"]*)"/);
-  if (!icalMatch) throw new Error('iCal-Link nicht im Stundenplan gefunden');
+  // Direct iCal feed (a uni's own .ics/subscribe link) — parse it straight away.
+  // This is what makes non-LSF universities work with zero per-uni scraping.
+  if (/BEGIN:VCALENDAR/i.test(body)) return parseIcal(body);
+
+  // Otherwise treat it as an LSF wplan page and follow its iCal export link.
+  const icalMatch = body.match(/href="([^"]*moduleCall=iCalendarPlan[^"]*)"/);
+  if (!icalMatch) throw new Error('Kein iCal-Export gefunden (Hochschule ggf. nicht unterstützt)');
 
   let icalUrl = icalMatch[1].replace(/&amp;/g, '&');
   if (icalUrl.startsWith('/')) {
@@ -66,7 +74,9 @@ async function fetchText(url, headers, timeoutMs = 15000) {
   try {
     const res = await fetch(url, { signal: controller.signal, headers, redirect: 'follow' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    const text = await res.text();
+    if (text.length > 5_000_000) throw new Error('Stundenplan-Antwort zu groß');
+    return text;
   } finally {
     clearTimeout(t);
   }

@@ -4,18 +4,23 @@ import {
   assertAllowedTimetableUrl, parseIcal, getEventsForWeek, getMonday,
 } from '../functions/api/_timetable.js';
 
-// ─── SSRF allowlist ─────────────────────────────────────────────────
-test('assertAllowedTimetableUrl: allows hs-pforzheim.de + subdomains', () => {
+// ─── SSRF hardening ─────────────────────────────────────────────────
+// Any public domain is allowed (user pastes any uni's .ics/LSF link); the guard
+// only blocks internal/loopback/link-local/metadata targets and raw IPs.
+test('assertAllowedTimetableUrl: allows public university domains', () => {
   assert.doesNotThrow(() => assertAllowedTimetableUrl('http://hic.hs-pforzheim.de/lsf/rds?x=1'));
-  assert.doesNotThrow(() => assertAllowedTimetableUrl('https://hs-pforzheim.de/foo'));
+  assert.doesNotThrow(() => assertAllowedTimetableUrl('https://lsf.hhu.de/qisserver/rds'));
+  assert.doesNotThrow(() => assertAllowedTimetableUrl('https://rapla.dhbw.de/rapla?page=ical'));
 });
 
-test('assertAllowedTimetableUrl: blocks metadata IP, look-alikes, schemes', () => {
+test('assertAllowedTimetableUrl: blocks internal targets, IPs, bad schemes', () => {
   for (const bad of [
     'http://169.254.169.254/latest/meta-data/',
-    'http://hic.hs-pforzheim.de.evil.com/',
-    'http://evilhs-pforzheim.de/',
+    'http://127.0.0.1/x',
+    'http://10.0.0.5/x',
     'http://localhost:8080/',
+    'http://intranet/x',       // no dot → not a public domain
+    'https://1.2.3.4/x',       // raw IP literal
     'file:///etc/passwd',
   ]) {
     assert.throws(() => assertAllowedTimetableUrl(bad), /nicht erlaubt|Ung/, `should block ${bad}`);

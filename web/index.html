@@ -43,6 +43,7 @@
 
     <main class="app-content">
       <div id="view-dashboard"></div>
+      <div id="view-fahrplan" class="hidden"></div>
       <div id="view-navigator" class="hidden"></div>
     </main>
 
@@ -53,6 +54,12 @@
         </svg>
         <span>Pendler</span>
       </button>
+      <button class="tab-item" id="tab-fahrplan" role="tab" aria-selected="false" onclick="switchTab('fahrplan')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M3.5 9h17M8 3v3M16 3v3"/><path d="M7.5 13h3M7.5 16.5h3M13.5 13h3"/>
+        </svg>
+        <span>Wochenplan</span>
+      </button>
       <button class="tab-item" id="tab-navigator" role="tab" aria-selected="false" onclick="switchTab('navigator')">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke="none"/>
@@ -61,6 +68,9 @@
       </button>
     </nav>
   </div>
+
+  <div id="onboarding" class="onboarding hidden" aria-hidden="true"></div>
+  <div id="ob-picker" class="ob-picker hidden" aria-hidden="true"></div>
 
   <div id="settings-overlay" class="settings-overlay hidden">
     <div class="settings-backdrop" onclick="closeSettings()"></div>

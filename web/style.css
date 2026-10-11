@@ -1,5 +1,14 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Wordmark face — used only for the app name, not body copy. */
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('/font/InstrumentSerif-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Backgrounds — warm cream palette */
   --bg: #faf9f5;
@@ -14,10 +23,10 @@
   --text-muted: #72716b;
   --text-faint: #9b9991;
 
-  /* Accent — terracotta */
-  --accent: #d87756;
-  --accent-dark: #c6603f;
-  --accent-muted: rgba(216, 119, 86, 0.10);
+  /* Accent — emerald green */
+  --accent: #2f9e6b;
+  --accent-dark: #227e56;
+  --accent-muted: rgba(47, 158, 107, 0.10);
   --accent-text: #ffffff;
 
   /* Status */
@@ -95,10 +104,12 @@ html, body {
 }
 
 .app-header h1 {
-  font-size: 18px;
-  font-weight: 700;
+  font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  font-size: 27px;
+  font-weight: 400;
+  line-height: 1;
   color: var(--text);
-  letter-spacing: -0.3px;
+  letter-spacing: 0.2px;
 }
 
 .header-date {
@@ -1378,8 +1389,65 @@ html, body {
 
 /* View switching */
 #view-dashboard.hidden,
+#view-fahrplan.hidden,
 #view-navigator.hidden { display: none; }
 #view-navigator { padding: 16px; padding-bottom: 24px; }
+
+/* ── Fahrplan (week overview) ─────────────────────────── */
+#view-fahrplan { padding: 12px 16px 24px; }
+.fahrplan-status {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 32px 0;
+}
+.fahrplan-days { display: flex; flex-direction: column; gap: 10px; }
+.fahrplan-day {
+  background: var(--surface, #fff);
+  border: 1px solid rgba(31, 30, 29, 0.08);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(31, 30, 29, 0.05);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.fahrplan-day:active { transform: scale(0.99); }
+.fahrplan-day.empty { opacity: 0.55; cursor: default; }
+.fahrplan-day.today { border-color: var(--accent, #c8632e); }
+.fahrplan-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fahrplan-day.empty .fahrplan-day-head { margin-bottom: 0; }
+.fahrplan-day-name { font-weight: 700; font-size: 15px; }
+.fahrplan-day-meta,
+.fahrplan-day-off {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fahrplan-events { display: flex; flex-direction: column; gap: 6px; }
+.fahrplan-event { display: flex; gap: 10px; }
+.fahrplan-event-time {
+  flex: 0 0 auto;
+  min-width: 88px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-dark, #9c4a1f);
+  font-variant-numeric: tabular-nums;
+}
+.fahrplan-event-info { flex: 1; min-width: 0; }
+.fahrplan-event-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fahrplan-event-room { font-size: 12px; color: var(--text-muted); }
 
 /* Content scrolls *under* the floating glass tab bar — give it clearance. */
 .app-content {
@@ -1441,8 +1509,8 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  min-width: 96px;
-  padding: 8px 18px 7px;
+  min-width: 80px;
+  padding: 8px 14px 7px;
   border: none;
   background: transparent;
   border-radius: 20px;
@@ -1629,3 +1697,367 @@ html, body {
   line-height: 1.5;
   padding: 28px 20px;
 }
+
+/* ── Onboarding (first-run setup) ─────────────
+   Full-screen overlay below the search overlay (z-100) so station search
+   still layers on top while picking Zuhause / Hochschule. */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  animation: obFade 0.3s ease;
+}
+.onboarding.hidden { display: none; }
+@keyframes obFade { from { opacity: 0; } to { opacity: 1; } }
+
+.ob-inner {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 26px) 26px calc(env(safe-area-inset-bottom) + 22px);
+}
+
+.ob-progress, .ob-progress-spacer {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  height: 8px;
+  margin-bottom: 12px;
+}
+.ob-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-heavy);
+  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.ob-dot.active { background: var(--accent); width: 24px; border-radius: 4px; }
+.ob-dot.done { background: var(--accent); }
+
+.ob-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.ob-welcome, .ob-finish { margin: auto 0; }
+
+.ob-footer {
+  display: flex;
+  gap: 12px;
+  padding-top: 20px;
+  flex-shrink: 0;
+}
+.ob-btn {
+  flex: 1;
+  padding: 15px 16px;
+  border-radius: 14px;
+  border: none;
+  font-size: 16px;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+.ob-btn.primary { background: var(--accent); color: var(--accent-text); }
+.ob-btn.ghost { flex: 0 0 auto; padding: 15px 22px; background: var(--surface-alt); color: var(--text-secondary); }
+.ob-btn:active { transform: scale(0.98); }
+.ob-btn:disabled { opacity: 0.4; pointer-events: none; }
+
+/* welcome */
+.ob-welcome { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.ob-logo {
+  width: 100px;
+  height: 100px;
+  border-radius: 23px;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.18), 0 4px 10px rgba(0,0,0,0.10);
+}
+.ob-wordmark {
+  font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: 54px;
+  line-height: 1;
+  letter-spacing: 0.3px;
+  color: var(--text);
+  margin-top: 26px;
+}
+.ob-tagline {
+  font-size: 16px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-top: 12px;
+}
+.ob-features {
+  list-style: none;
+  margin: 36px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+  width: 100%;
+  max-width: 340px;
+}
+.ob-features li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.ob-feat-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-alt);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  flex: none;
+}
+
+/* step layout */
+.ob-title { font-size: 27px; font-weight: 750; letter-spacing: -0.5px; color: var(--text); }
+.ob-sub { font-size: 15px; color: var(--text-muted); line-height: 1.5; margin-top: 10px; margin-bottom: 26px; }
+.ob-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ob-field-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 24px 0 10px;
+}
+.ob-field-label:first-child { margin-top: 0; }
+.ob-select { display: flex; flex-direction: column; gap: 10px; }
+.ob-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 15px 16px;
+  border-radius: 13px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ob-option:active { transform: scale(0.995); }
+.ob-option.active { border-color: var(--accent); background: var(--accent-muted); }
+.ob-option.disabled { opacity: 0.6; cursor: default; font-weight: 500; color: var(--text-muted); }
+.ob-option-check { color: var(--accent); font-weight: 800; opacity: 0; transition: opacity 0.15s ease; }
+.ob-option.active .ob-option-check { opacity: 1; }
+.ob-option-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+  background: var(--surface-alt);
+  padding: 3px 9px;
+  border-radius: 7px;
+}
+
+/* onboarding · searchable course picker + semester stepper */
+.ob-search {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 13px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-size: 16px;
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease;
+}
+.ob-search:focus { outline: none; border-color: var(--accent); }
+.ob-search::placeholder { color: var(--text-faint); }
+.ob-course-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ob-course-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ob-course-abbr { font-size: 12px; font-weight: 700; color: var(--text-faint); flex: none; }
+.ob-course-empty { font-size: 14px; color: var(--text-muted); padding: 10px 4px; }
+.ob-hint { font-size: 13px; color: var(--text-muted); line-height: 1.45; margin-top: 10px; }
+.ob-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 13px;
+  padding: 5px;
+}
+.ob-step-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 9px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease, transform 0.1s ease;
+}
+.ob-step-btn:active { transform: scale(0.94); background: var(--surface-hover); }
+.ob-stepper-val {
+  min-width: 56px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 750;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* onboarding · full-screen picker (Hochschule / Studiengang) */
+.ob-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 95;              /* above onboarding (90), below station search (100) */
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  animation: obFade 0.22s ease;
+}
+.ob-picker.hidden { display: none; }
+.ob-picker-inner {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 18px) 22px calc(env(safe-area-inset-bottom) + 16px);
+}
+.ob-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.ob-picker-title { font-size: 19px; font-weight: 750; letter-spacing: -0.3px; color: var(--text); }
+.ob-picker-cancel {
+  background: none;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-dark);
+  cursor: pointer;
+  padding: 6px 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+.ob-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-bottom: 8px;
+}
+
+/* settings · restart onboarding */
+.ob-restart-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease, transform 0.1s ease;
+}
+.ob-restart-btn:active { transform: scale(0.99); background: var(--surface-alt); }
+
+/* finish */
+.ob-finish { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.ob-check {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 38px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+  box-shadow: 0 12px 28px rgba(47, 158, 107, 0.35);
+}
+.ob-finish .ob-title { margin-top: 18px; }
+.ob-summary {
+  margin-top: 28px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  text-align: left;
+}
+.ob-summary-row { display: flex; align-items: center; gap: 14px; padding: 15px 16px; }
+.ob-summary-row + .ob-summary-row { border-top: 1px solid var(--border); }
+.ob-summary-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--surface-alt);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  flex: none;
+}
+.ob-summary-label { font-size: 12px; color: var(--text-muted); }
+.ob-summary-value { font-size: 15px; font-weight: 600; color: var(--text); margin-top: 1px; }
+
+/* onboarding · dummy-notice info toggle (Stundenplan step) */
+.ob-title-row { display: flex; align-items: center; gap: 8px; }
+.ob-info-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  line-height: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s ease;
+}
+.ob-info-btn svg { width: 20px; height: 20px; display: block; }
+.ob-info-btn:active,
+.ob-info-btn.active { color: var(--accent); }
+.ob-info-note {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-muted);
+  border: 1px solid rgba(47, 158, 107, 0.20);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  animation: obFade 0.2s ease;
+}
+.ob-info-note b { color: var(--text); font-weight: 650; }
