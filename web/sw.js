@@ -1,4 +1,4 @@
-const CACHE_NAME = 'commute-v27';
+const CACHE_NAME = 'pendler-v28';
 const STATIC_ASSETS = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', e => {

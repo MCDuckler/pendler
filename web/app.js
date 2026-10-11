@@ -106,21 +106,16 @@ function saveConfig() {
 }
 
 // ─── API ─────────────────────────────────────────────
-// Primary: own backend (/api/*, proxies bahn.de, same-origin — no third-party
-// rate limit). Fallback: public transport.rest demo when the backend errors out
-// (e.g. bahn.de bot-blocks the egress IP). Either upstream alone is flaky; the
-// pair is what makes station search & journeys load reliably.
+// Own backend on the WetOwl box (/api/*, same origin). It asks EFA-BW, which has
+// live data Germany-wide; bahn.de blocks server IPs (OPS_BLOCKED) since 2026.
 const API = '/api';
-const DB_FALLBACK = 'https://v6.db.transport.rest';
-const PRODUCT_TO_HAFAS = {
-  ICE: 'nationalExpress', EC_IC: 'national', IR: 'regionalExpress',
-  REGIONAL: 'regional', SBAHN: 'suburban', BUS: 'bus',
-  UBAHN: 'subway', TRAM: 'tram', ANRUFPFLICHTIG: 'taxi',
-};
 
 async function fetchJson(url, signal) {
   const res = await fetch(url, signal ? { signal } : undefined);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -128,19 +123,12 @@ async function searchLocations(query) {
   if (!query || query.length < 2) return [];
   if (searchAbort) searchAbort.abort();
   searchAbort = new AbortController();
-  const signal = searchAbort.signal;
-  const q = encodeURIComponent(query);
-  try {
-    return await fetchJson(`${API}/locations?query=${q}`, signal);
-  } catch (e) {
-    if (e.name === 'AbortError') throw e;
-    return await fetchJson(`${DB_FALLBACK}/locations?query=${q}&results=8`, signal);
-  }
+  return fetchJson(`${API}/locations?query=${encodeURIComponent(query)}`, searchAbort.signal);
 }
 
-// Both upstreams return the same hafas-shaped legs, so one normalizer fits both.
 function normalizeJourneys(data) {
   return (data.journeys || []).map(j => ({
+    cancelled: !!j.cancelled,
     legs: j.legs.map(leg => ({
       origin: { name: leg.origin?.name || '' },
       destination: { name: leg.destination?.name || '' },
@@ -157,6 +145,7 @@ function normalizeJourneys(data) {
       walking: leg.walking || false,
       transfer: leg.transfer || false,
       distance: leg.distance || null,
+      cancelled: leg.cancelled || false,
     })),
   }));
 }
@@ -172,52 +161,20 @@ async function fetchJourneys(fromLoc, toLoc, timeStr, forDate, mode, opts = {}) 
   const excludedProducts = opts.excludedProducts ?? config.excludedProducts ?? [];
   const viaStops = opts.viaStops ?? config.viaStops ?? [];
 
-  // Resolve time/mode once; both upstreams share the departure/arrival param names.
   const useArrival = mode === 'arrival' && !(isToday && timeDate < now);
   const timeKey = useArrival ? 'arrival' : 'departure';
   const timeVal = (useArrival ? timeDate : (isToday && timeDate < now ? now : timeDate)).toISOString();
   const results = String(opts.results ?? config.results ?? 4);
 
-  // Primary: own backend. from/to = stop id string or JSON-encoded address.
+  // from/to = stop id string, or the JSON-encoded location (addresses: coordinates).
   const encodeLoc = loc => (loc.type === 'location' && !loc.id) ? JSON.stringify(loc) : loc.id;
   const apiParams = new URLSearchParams({
     from: encodeLoc(fromLoc), to: encodeLoc(toLoc), results, [timeKey]: timeVal,
   });
-  if (excludedProducts.length > 0) {
-    apiParams.set('excludeProducts', excludedProducts.join(','));
-  }
-  if (viaStops.length > 0) {
-    // Backend resolves each stop via buildHaltId (id string or address object).
-    apiParams.set('via', JSON.stringify(viaStops));
-  }
+  if (excludedProducts.length > 0) apiParams.set('excludeProducts', excludedProducts.join(','));
+  if (viaStops.length > 0) apiParams.set('via', JSON.stringify(viaStops));
 
-  try {
-    return normalizeJourneys(await fetchJson(`${API}/journeys?${apiParams}`));
-  } catch {
-    // Fallback: public transport.rest demo (different param contract).
-    const fb = new URLSearchParams({ results, [timeKey]: timeVal });
-    setLocParam(fb, 'from', fromLoc);
-    setLocParam(fb, 'to', toLoc);
-    for (const p of excludedProducts) {
-      const hafas = PRODUCT_TO_HAFAS[p];
-      if (hafas) fb.set(hafas, 'false');
-    }
-    // transport.rest only supports a single station-id via stop (best effort).
-    const firstVia = viaStops.find(v => v.id);
-    if (firstVia) fb.set('via', firstVia.id);
-    return normalizeJourneys(await fetchJson(`${DB_FALLBACK}/journeys?${fb}`));
-  }
-}
-
-// transport.rest takes a bare stop id, or split lat/long/address params.
-function setLocParam(params, key, loc) {
-  if (loc.type === 'location' && !loc.id) {
-    params.set(`${key}.latitude`, loc.latitude);
-    params.set(`${key}.longitude`, loc.longitude);
-    params.set(`${key}.address`, loc.address || loc.name);
-  } else {
-    params.set(key, loc.id);
-  }
+  return normalizeJourneys(await fetchJson(`${API}/journeys?${apiParams}`));
 }
 
 // ─── Timetable API ───────────────────────────────────

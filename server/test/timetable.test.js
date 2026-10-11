@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assertAllowedTimetableUrl, parseIcal, getEventsForWeek, getMonday,
-} from '../functions/api/_timetable.js';
+} from '../src/timetable.js';
 
 // ─── SSRF hardening ─────────────────────────────────────────────────
 // Any public domain is allowed (user pastes any uni's .ics/LSF link); the guard
