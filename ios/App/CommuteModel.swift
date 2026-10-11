@@ -74,9 +74,9 @@ final class CommuteModel: ObservableObject {
 
     // MARK: - Onboarding data
 
-    func loadUniversities() async {
+    func loadUniversities() async throws {
         guard universities.isEmpty else { return }
-        do { universities = try await api.universities() } catch { self.error = error.localizedDescription }
+        universities = try await api.universities()
     }
 
     func courses(for uni: University) async -> [Course] {

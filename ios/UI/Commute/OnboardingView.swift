@@ -84,10 +84,13 @@ struct ScheduleStep: View {
     @State private var courses: [Course] = []
     @State private var courseQuery = ""
     @State private var pickingCourse = false
+    @State private var loadError: String?
 
     private var uni: University? { commute.universities.first { $0.id == profile.universityId } }
 
     var body: some View {
+        // .task and .sheet sit on this section because it always has a row: on a section
+        // with no rows SwiftUI renders nothing, so neither would ever run.
         Section {
             Picker("Quelle", selection: $profile.scheduleMode) {
                 Text("Stundenplan").tag("timetable")
@@ -95,12 +98,26 @@ struct ScheduleStep: View {
             }
             .pickerStyle(.segmented)
         }
+        .task { await loadUnis() }
+        .sheet(isPresented: $pickingCourse) { coursePicker }
         if profile.scheduleMode == "timetable" {
-            Section("Hochschule") {
+            Section {
+                if commute.universities.isEmpty {
+                    if let loadError {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Hochschulen konnten nicht geladen werden: \(loadError)").font(.footnote)
+                            Button("Nochmal versuchen") { Task { await loadUnis() } }
+                        }
+                    } else {
+                        HStack { Text("Hochschulen werden geladen…").foregroundStyle(.secondary); Spacer(); ProgressView() }
+                    }
+                }
                 Picker("Hochschule", selection: Binding(get: { profile.universityId ?? "" }, set: selectUni)) {
                     Text("Wählen").tag("")
                     ForEach(commute.universities) { u in Text(u.name).tag(u.id) }
                 }
+                .pickerStyle(.navigationLink)
+                .disabled(commute.universities.isEmpty)
                 if let uni, uni.system != "ics" {
                     Button { pickingCourse = true } label: {
                         HStack {
@@ -120,6 +137,12 @@ struct ScheduleStep: View {
                         set: { profile.icsUrl = $0; profile.timetableUrl = $0.trimmingCharacters(in: .whitespaces) }))
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
+            } header: { Text("Hochschule") } footer: {
+                if let url = profile.timetableUrl, !url.isEmpty {
+                    Text(url).font(.caption2.monospaced()).lineLimit(2)
+                } else if uni != nil, uni?.system != "ics", profile.courseId == nil {
+                    Text("Wähle deinen Studiengang, dann ist der Stundenplan da.")
+                }
             }
             Section {
                 Stepper("Ankommen \(profile.timetableLeadMin) min vor der ersten Vorlesung",
@@ -128,14 +151,12 @@ struct ScheduleStep: View {
         } else {
             ManualDaysSection(profile: $profile)
         }
-        Section {
-        } footer: {
-            if let url = profile.timetableUrl, profile.scheduleMode == "timetable", !url.isEmpty {
-                Text(url).font(.caption2.monospaced()).lineLimit(2)
-            }
-        }
-        .task { await commute.loadUniversities() ; if let uni { courses = await commute.courses(for: uni) } }
-        .sheet(isPresented: $pickingCourse) { coursePicker }
+    }
+
+    private func loadUnis() async {
+        loadError = nil
+        do { try await commute.loadUniversities() } catch { loadError = error.localizedDescription }
+        if let uni, courses.isEmpty { courses = await commute.courses(for: uni) }
     }
 
     private func selectUni(_ id: String) {
@@ -177,6 +198,7 @@ struct ScheduleStep: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { pickingCourse = false } } }
             .overlay { if courses.isEmpty { ProgressView() } }
+            .task { if courses.isEmpty, let uni { courses = await commute.courses(for: uni) } }
         }
     }
 
