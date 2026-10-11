@@ -1,6 +1,7 @@
 # Pendler v2 — plan
 
-Status: **plan only, nothing built.** Written 2026-10-11.
+Written 2026-10-11. **Status 2026-10-11: phases 0–4 built and deployed, nothing verified on an
+iPhone yet** (see §10).
 
 v2 turns Pendler from a Cloudflare-hosted PWA into one product with three parts:
 
@@ -98,11 +99,10 @@ one host, one app. The pendler service never touches IMAP or Claude.
 
 ## 3. Server (phase 1–2)
 
-**Language: Python stdlib**, same as mailcoach, because the box has no Node and one runtime is
-less to keep alive. The JS to port is small (~700 lines: `_shared.js`, `_timetable.js`,
-`journeys.js`, `locations.js`) and the v1 `node --test` cases become the unittest fixtures.
+**Language: Node** (decided after the plan: Node 24 LTS installed at `/opt/node` on the box), so
+v1's timetable code and tests carried over as they were. Zero npm dependencies.
 
-### API (`/api/v2`)
+### API (`/api`, v1 paths kept so the PWA needed no routing changes — full contract in `docs/API.md`)
 Public, stateless (what the PWA uses; rate-limited per IP, cached 60 s per query):
 - `GET  /locations?q=` → stops/addresses (EFA stop finder, `type_sf=any`)
 - `GET  /journeys?from=&to=&departure=|arrival=&via=&exclude=` → v1 journey JSON shape
@@ -135,15 +135,16 @@ handle: resolve names to stop ids first (bare names return "multiple matches"), 
 if EFA misses something. Unverified — only build it if a real gap shows up.
 
 ### Deploy
-- `/opt/pendler` (release tree) + `/var/lib/pendler` (SQLite, ipa mirror), systemd
-  `pendler.service` bound to `172.18.0.1:8791`, ufw rule from `172.18/16` like mailcoach.
+- `/opt/pendler` (release tree) + `/var/lib/pendler` (devices JSON, ipa mirror), systemd
+  `pendler.service` bound to `172.18.0.1:8792` (8791 is ntfy), ufw rule from `172.18/16` like mailcoach.
 - **Pull-based updates, no box credentials in GitHub:** `pendler-update.timer` (every 15 min)
-  uses the box's `gh` (logged in as MCDuckler) to fetch the latest `server-*` release tarball,
-  checks its sha256, unpacks to `/opt/pendler/releases/<ver>`, flips the `current` symlink,
-  runs `python -m pendler selftest`, restarts; on failure flips back. The same timer mirrors the
-  newest `ios-*` ipa into `/app/` and rewrites `source.json` (replaces the mailcoach job).
-- Caddy: add the `pendler.` site to `/opt/muse/deploy/Caddyfile` **and commit it in the muse
-  repo** (the mailcoach edit there is still uncommitted; do both together).
+  runs `deploy/update.sh`: newest `server-*` release from the public API, sha256 check, unpack to
+  `/opt/pendler/releases/<tag>`, flip `current`, restart, wait for `/api/health` to report the new
+  tag, else flip back. The server itself mirrors the newest `ios-*` ipa into `/app/` and writes
+  `source.json`.
+- Caddy: `pendler.` site, Mail Coach `/mail` and the ntfy site are committed in the muse repo's
+  `deploy/Caddyfile` (`publish.sh` copies that file over the box's on every muse deploy — which is
+  how the uncommitted Mail Coach routes had silently disappeared).
 
 ---
 
@@ -244,3 +245,25 @@ Phases 1 and 3 can run in parallel once phase 0 is in.
    pushes only for paired devices.
 4. **Bundle id** — *recommended:* new `dance.duckduck.pendler`, not reusing Mail Coach's.
 5. **Live Activity in v2.0 or later** — *recommended:* later (phase 6).
+
+## 10. Progress log
+
+**2026-10-11**
+- Phase 0: v1 (`commute-pwa`, pending changes committed first) and `mailcoach-ios` imported with
+  history into `web/`+`server/` and `ios/`. CI: `test.yml`, `server-release.yml`, `ios.yml`.
+- Phase 1: `server/src/efa.js` (EFA-BW: stop finder, trips, departure monitor → v1 shapes),
+  `plan.js` (when to leave; `today` + `next`), `app.js` (API + static + `/app`), `store.js`
+  (paired devices), `watch.js` (ntfy pushes), `appdist.js` (ipa mirror). 40 tests, also under `TZ=UTC`.
+- Phase 2: live at `https://pendler.89-58-49-140.nip.io` — PWA checked in headless Chromium with
+  real EFA + HIC data. ntfy user `pendler` (write-only on topic `pendler`), `phone` can read it.
+  Mail Coach `/mail` + ntfy site restored in Caddy (they had been dropped).
+- Phases 3–4: iOS app (Heute / Woche / Navigator / Mail / Einstellungen, native onboarding,
+  local reminders, BG refresh) + widgets (Pendler small/medium/large/lock screen, Uni-Mail).
+  First CI build green; `ios-0.2.0-*` mirrored to `/app/source.json`.
+
+**Open**
+- Install on the iPhone via SideStore, check the app-group sharing under SideStore, then pair
+  (`pendler pair` on the box) and subscribe to topic `pendler` in the ntfy app.
+- Phase 5 cutover (remove Mail Coach app, archive `mailcoach-ios`, delete the CF Pages project).
+- Phase 6 stretch (Live Activity, interactive widgets, Shortcuts).
+

@@ -108,7 +108,6 @@ final class CommuteModel: ObservableObject {
                 let plat = r?.departurePlatform.map { " · Gl. \($0)" } ?? ""
                 content.body = "\(r?.line?.name ?? "Fußweg") \(Dates.hhmm(r?.plannedDep))\(plat) · an \(Dates.hhmm(leg.arrive))"
                 content.sound = .default
-                content.interruptionLevel = .timeSensitive
                 content.userInfo = ["link": "pendler://today"]
                 let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
                 let req = UNNotificationRequest(identifier: "leave-\(day.date)-\(dir)",
@@ -122,7 +121,7 @@ final class CommuteModel: ObservableObject {
     func requestNotificationPermission() async {
         let c = UNUserNotificationCenter.current()
         if await c.notificationSettings().authorizationStatus == .notDetermined {
-            _ = try? await c.requestAuthorization(options: [.alert, .sound, .badge, .timeSensitive])
+            _ = try? await c.requestAuthorization(options: [.alert, .sound, .badge])
         }
     }
 

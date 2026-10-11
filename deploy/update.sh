@@ -20,7 +20,7 @@ a = {x["name"]: x["browser_download_url"] for x in r["assets"]}
 print(r["tag_name"], a.get("pendler-server.tar.gz", "-"), a.get("pendler-server.tar.gz.sha256", "-"))
 ') || true
 [ -n "${tag:-}" ] || { echo "no server release"; exit 0; }
-prev=$(basename "$(readlink -f "$ROOT/current" 2>/dev/null || echo none)")
+prev=none; [ -L "$ROOT/current" ] && prev=$(basename "$(readlink -f "$ROOT/current")")
 [ "$tag" = "$prev" ] && exit 0
 [ "$url" != "-" ] && [ "$sha_url" != "-" ] || { echo "$tag: assets missing"; exit 1; }
 
