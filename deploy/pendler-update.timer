@@ -2,9 +2,11 @@
 Description=Pendler — look for a new server release every 15 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
+# OnCalendar, not OnUnitActiveSec: the latter never re-arms when the service was last
+# started by hand before the timer existed.
+OnCalendar=*:0/15
 RandomizedDelaySec=60
+Persistent=true
 
 [Install]
 WantedBy=timers.target
