@@ -1,0 +1,7 @@
+[Unit]
+Description=Pendler — install the newest server release
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pendler/update.sh

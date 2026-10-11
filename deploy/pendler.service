@@ -1,0 +1,25 @@
+# /etc/systemd/system/pendler.service — Pendler on the WetOwl box.
+# Binds the muse compose gateway (172.18.0.1), so only Caddy reaches it.
+[Unit]
+Description=Pendler — commute PWA, API and iPhone builds
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=pendler
+Group=pendler
+EnvironmentFile=/etc/pendler/pendler.env
+Environment=TZ=Europe/Berlin NODE_ENV=production
+ExecStart=/opt/node/bin/node /opt/pendler/current/server/server.js
+Restart=always
+RestartSec=3
+StateDirectory=pendler
+StateDirectoryMode=0750
+MemoryMax=256M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

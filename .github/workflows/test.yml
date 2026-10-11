@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "ios/**"]
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm run check
+      - run: npm test
+      # The timetable and plan code must not depend on the host's timezone.
+      - run: TZ=UTC npm test
+      - run: bash -n deploy/update.sh && bash -n deploy/pendler-cli.sh

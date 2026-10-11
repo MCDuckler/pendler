@@ -1,0 +1,50 @@
+# Package server/ + web/ + deploy/ as a GitHub Release `server-<UTC stamp>-<sha>`.
+# The WetOwl box pulls it (deploy/update.sh via pendler-update.timer): GitHub never
+# holds credentials for the box.
+name: Server release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["server/**", "web/**", "deploy/**", "package.json", ".github/workflows/server-release.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: server-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm run check && npm test
+
+      - name: Package
+        id: pkg
+        run: |
+          tag="server-$(date -u +%Y%m%d%H%M)-${GITHUB_SHA::7}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+          echo "$tag" > VERSION
+          tar --exclude='server/test' -czf dist/pendler-server.tar.gz VERSION package.json server web deploy
+          (cd dist && sha256sum pendler-server.tar.gz > pendler-server.tar.gz.sha256)
+          ls -lh dist
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.pkg.outputs.tag }}" dist/pendler-server.tar.gz dist/pendler-server.tar.gz.sha256 \
+            --title "Server ${{ steps.pkg.outputs.tag }}" --latest=false \
+            --notes "$(git log -1 --format=%s). The box installs this within 15 minutes."
+          # Keep the 5 newest server releases; the box keeps its own 3.
+          gh release list -L 100 --json tagName,createdAt -q '[.[] | select(.tagName | startswith("server-"))] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' \
+            | xargs -r -n1 gh release delete --yes --cleanup-tag
