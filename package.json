@@ -5,7 +5,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node server/server.js",
-    "test": "node --test server/test/",
+    "test": "node --test 'server/test/*.test.js'",
     "check": "node --check server/server.js && node --check server/cli.js && for f in server/src/*.js web/app.js web/sw.js; do node --check $f || exit 1; done"
   }
 }
