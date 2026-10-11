@@ -1,0 +1,17 @@
+{
+  "name": "commute-pwa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check app.js && node --check functions/api/_shared.js && node --check functions/api/_timetable.js && node --check functions/api/journeys.js && node --check functions/api/locations.js && node --check functions/api/timetable.js",
+    "build": "cp index.html style.css app.js manifest.json sw.js icon.svg icon-192.png icon-512.png apple-touch-icon.png public/ && mkdir -p public/font && cp font/InstrumentSerif-Regular.ttf public/font/ && mkdir -p public/unis && cp unis/*.json public/unis/",
+    "preview": "npm run build && npx wrangler pages dev public --live-reload",
+    "deploy": "npm run build && npx wrangler pages deploy public --branch production"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.1.0",
+    "wrangler": "^4.81.0"
+  }
+}

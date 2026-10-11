@@ -1,0 +1,15 @@
+{
+  "name": "Pendler",
+  "short_name": "Pendler",
+  "description": "Tägliche Pendelverbindungen auf einen Blick",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf9f5",
+  "theme_color": "#faf9f5",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}
